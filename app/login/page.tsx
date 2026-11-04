@@ -4,9 +4,10 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { PasswordField } from "../components/password-field";
-import { authErrorMessage } from "../../lib/supabase/auth-errors";
-import { createClient } from "../../lib/supabase/client";
-import { clearOnboardingDraft, readOnboardingDraft, seedInitialNaviData } from "../../lib/supabase/navi";
+import { authErrorMessage } from "../../lib/auth/errors";
+import { authClient } from "../../lib/auth/client";
+import { clearOnboardingDraft, readOnboardingDraft } from "../../lib/navi/draft";
+import { seedInitialNaviData } from "../../lib/navi/actions";
 
 export default function LoginPage() {
   const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
@@ -14,9 +15,8 @@ export default function LoginPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(""); setLoading(true);
-    const supabase = createClient();
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (signInError || !data.session) { setLoading(false); setError(authErrorMessage(signInError, "login")); return; }
+    const { error: signInError } = await authClient.signIn.email({ email: email.trim(), password });
+    if (signInError) { setLoading(false); setError(authErrorMessage(signInError, "login")); return; }
     const draft = readOnboardingDraft();
     if (draft) {
       try { await seedInitialNaviData(draft); clearOnboardingDraft(); }

@@ -2,3 +2,10 @@ node_modules
 .next
 .env.local
 *.log
+.env*
+!.env.example
+.mcp.json
+*.db
+*.db-*
+coverage
+*.tsbuildinfo

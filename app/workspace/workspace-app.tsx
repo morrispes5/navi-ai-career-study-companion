@@ -1,10 +1,13 @@
 "use client";
 
-import { Check, ChevronRight, CircleUserRound, Clock3, FileClock, Lightbulb, LogOut, MessageCircle, Pencil, Plus, Save, Send, Sparkles, Target, Trash2, UserRound, X } from "lucide-react";
+import { Check, ChevronRight, CircleUserRound, Clock3, FileClock, Lightbulb, LogOut, MessageCircle, Pencil, Plus, Send, Sparkles, Target, Trash2, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { applyReplan, clearMemories, clearOnboardingDraft, completeTask, createMemory, loadDashboard, MissingNaviProfileError, previewReplan, readOnboardingDraft, removeMemory, seedInitialNaviData, updateMemory, type DashboardData, type NaviMemory, type NaviProfile } from "../../lib/supabase/navi";
-import { createClient } from "../../lib/supabase/client";
+import { applyReplan, clearMemories, completeTask, createMemory, getSessionInfo, loadDashboard, removeMemory, seedInitialNaviData, updateMemory } from "../../lib/navi/actions";
+import { clearOnboardingDraft, readOnboardingDraft } from "../../lib/navi/draft";
+import { previewReplan, type NaviProfile } from "../../lib/navi/profile";
+import type { DashboardData, NaviMemory } from "../../lib/db/navi";
+import { authClient } from "../../lib/auth/client";
 
 export type WorkspaceView = "today" | "plan" | "chat" | "memory" | "profile";
 const roleOptions = ["Frontend Developer", "Backend Developer", "UI/UX Designer", "Data Analyst"];
@@ -32,7 +35,6 @@ const profileFacts = (profile: NaviProfile) => [
 export function WorkspaceApp({ view }: { view: WorkspaceView }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [email, setEmail] = useState("");
-  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -49,19 +51,16 @@ export function WorkspaceApp({ view }: { view: WorkspaceView }) {
 
   const refresh = useCallback(async () => {
     setLoading(true); setError("");
-    const supabase = createClient();
-    const { data: sessionData } = await supabase.auth.getSession();
-    const session = sessionData.session;
-    if (!session) { window.location.assign("/login"); return; }
-    setAccessToken(session.access_token); setEmail(session.user.email ?? "");
     try {
-      let dashboard: DashboardData;
-      try { dashboard = await loadDashboard(); }
-      catch (loadError) {
-        if (!(loadError instanceof MissingNaviProfileError)) throw loadError;
+      const session = await getSessionInfo();
+      if (!session) { window.location.assign("/login"); return; }
+      setEmail(session.email);
+      let dashboard = await loadDashboard();
+      if (!dashboard) {
         const draft = readOnboardingDraft();
         if (!draft) { setNeedsOnboarding(true); return; }
         await seedInitialNaviData(draft); clearOnboardingDraft(); dashboard = await loadDashboard();
+        if (!dashboard) throw new Error("Rencana belum tersedia.");
       }
       setData(dashboard); setEditedProfile(dashboard.profile); setNeedsOnboarding(false);
     } catch (loadError) {
@@ -70,21 +69,15 @@ export function WorkspaceApp({ view }: { view: WorkspaceView }) {
   }, []);
 
   useEffect(() => {
-    const supabase = createClient();
-    refresh();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAccessToken(session?.access_token ?? null);
-      if (!session) window.location.assign("/login");
-    });
-    return () => subscription.unsubscribe();
+    void refresh();
   }, [refresh]);
 
   const notes = useMemo(() => data?.memories.filter((memory) => memory.category === "note") ?? [], [data]);
   const proposal = data && editedProfile ? previewReplan(data.profile, editedProfile) : null;
 
-  async function markDone(taskId: string, milestoneId: string) {
+  async function markDone(taskId: string) {
     setSavingTask(taskId); setError("");
-    try { await completeTask(taskId, milestoneId); setNotice("Tugas selesai. Navi sudah memilih langkah berikutnya."); await refresh(); }
+    try { await completeTask(taskId); setNotice("Tugas selesai. Navi sudah memilih langkah berikutnya."); await refresh(); }
     catch { setError("Tugas belum dapat diperbarui. Coba lagi."); }
     finally { setSavingTask(null); }
   }
@@ -97,14 +90,9 @@ export function WorkspaceApp({ view }: { view: WorkspaceView }) {
     const optimistic = { id: `local-${Date.now()}`, role: "user" as const, content: text, createdAt: new Date().toISOString() };
     setData({ ...data, messages: [...data.messages, optimistic] });
     try {
-      let token = accessToken;
-      if (!token) {
-        const { data: refreshed } = await createClient().auth.refreshSession();
-        token = refreshed.session?.access_token ?? null;
-      }
-      if (!token) throw new Error("Sesi berakhir. Silakan masuk kembali.");
-      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ message: text, conversationId: data.conversationId ?? undefined }) });
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, conversationId: data.conversationId ?? undefined }) });
       const result = await response.json() as { answer?: string; nextAction?: string; followUp?: string | null; conversationId?: string; error?: string };
+      if (response.status === 401) { window.location.assign("/login"); return; }
       if (!response.ok || !result.answer || !result.nextAction) throw new Error(result.error ?? "Navi belum dapat membalas.");
       const reply = `${result.answer}\n\nLangkah berikutnya: ${result.nextAction}${result.followUp ? `\n\n${result.followUp}` : ""}`;
       setData((current) => current ? { ...current, conversationId: result.conversationId ?? current.conversationId, messages: [...current.messages, { id: `reply-${Date.now()}`, role: "navi", content: reply, createdAt: new Date().toISOString() }] } : current);
@@ -125,7 +113,7 @@ export function WorkspaceApp({ view }: { view: WorkspaceView }) {
   async function deleteAllMemories() { if (!confirm("Hapus semua catatan yang dipakai Navi?")) return; try { await clearMemories(); setNotice("Semua catatan dihapus."); await refresh(); } catch { setError("Memori belum dapat dihapus."); } }
   function openProfileProposal() { if (!data || !editedProfile) return; if (JSON.stringify(data.profile) === JSON.stringify(editedProfile)) { setNotice("Belum ada perubahan profil untuk diterapkan."); return; } setProposalOpen(true); }
   async function confirmReplan() { if (!editedProfile) return; setApplyingPlan(true); try { await applyReplan(editedProfile); setProposalOpen(false); setEditingProfile(false); setNotice("Rencana baru dibuat. Capaian lama tetap tersimpan di riwayat."); await refresh(); } catch { setError("Rencana belum dapat diperbarui."); } finally { setApplyingPlan(false); } }
-  async function logout() { await createClient().auth.signOut({ scope: "local" }); window.location.assign("/"); }
+  async function logout() { await authClient.signOut(); window.location.assign("/"); }
 
   if (loading) return <main className="workspace-loader"><Logo /><p>Memuat rencana belajarmu...</p></main>;
   if (needsOnboarding) return <main className="workspace-loader"><Logo /><h1>Hubungkan rencanamu</h1><p>Akunmu sudah masuk, tetapi jawaban onboarding belum tersimpan. Isi lima pertanyaan agar rencanamu bisa dibuat.</p><Link className="primary-button" href="/?start=1">Lengkapi onboarding</Link><button className="back-button" onClick={logout}>Keluar akun</button></main>;
@@ -140,18 +128,18 @@ export function WorkspaceApp({ view }: { view: WorkspaceView }) {
   </section><nav className="mobile-tabs">{navigation.map((item) => { const Icon = item.icon; return <Link className={view === item.id ? "active" : ""} key={item.id} href={item.href}><Icon />{item.label}</Link>; })}</nav></main>;
 }
 
-function TodayView({ data, onComplete, savingTask }: { data: DashboardData; onComplete: (id: string, milestoneId: string) => void; savingTask: string | null }) {
+function TodayView({ data, onComplete, savingTask }: { data: DashboardData; onComplete: (id: string) => void; savingTask: string | null }) {
   const percent = data.plan.totalTasks ? Math.round((data.plan.completedTasks / data.plan.totalTasks) * 100) : 0;
   const task = data.plan.nextTask;
   return <><header className="content-head"><div><p className="eyebrow"><span /> Hari ini</p><h1>Satu langkah untuk {data.profile.role}.</h1><p>Fokus pada satu tugas kecil agar rencanamu benar-benar bergerak.</p></div><Link className="secondary-button" href="/workspace/profile"><Pencil size={15} /> Sesuaikan</Link></header><div className="today-summary"><article><small>Progres rencana</small><b>{percent}%</b><span>{data.plan.completedTasks} dari {data.plan.totalTasks} tugas selesai</span><i><em style={{ width: `${percent}%` }} /></i></article><article><small>Ritme minggu ini</small><b>{data.profile.hours}</b><span>Target {data.profile.timeline}</span></article></div>{task ? <TaskCard task={task} onComplete={onComplete} saving={savingTask === task.id} /> : <div className="empty success-empty"><Check size={24} /><h2>Semua tugas di rencana ini selesai.</h2><p>Lihat riwayat capaianmu atau sesuaikan target berikutnya.</p><Link className="primary-button" href="/workspace/profile">Sesuaikan rencana</Link></div>}<div className="today-links"><Link href="/workspace/plan"><FileClock size={17} /> Lihat seluruh rencana</Link><Link href="/workspace/chat"><MessageCircle size={17} /> Diskusikan hambatan dengan Navi</Link></div></>;
 }
 
-function TaskCard({ task, onComplete, saving }: { task: DashboardData["plan"]["nextTask"] extends infer T ? Exclude<T, null> : never; onComplete: (id: string, milestoneId: string) => void; saving: boolean }) {
-  return <article className="next-task"><div className="task-top"><span className="focus-tag"><Sparkles size={13} /> Mulai dari sini</span><span className="time"><Clock3 size={14} /> {task.estimatedMinutes} menit</span></div><h2>{task.title}</h2><p>{task.description}</p><div className="task-footer"><div className="task-tags"><span>Praktik</span><span>Langkah kecil</span></div><button className="done-button" disabled={saving} onClick={() => onComplete(task.id, task.milestoneId)}>{saving ? "Menyimpan..." : "Tandai selesai"}</button></div></article>;
+function TaskCard({ task, onComplete, saving }: { task: DashboardData["plan"]["nextTask"] extends infer T ? Exclude<T, null> : never; onComplete: (id: string) => void; saving: boolean }) {
+  return <article className="next-task"><div className="task-top"><span className="focus-tag"><Sparkles size={13} /> Mulai dari sini</span><span className="time"><Clock3 size={14} /> {task.estimatedMinutes} menit</span></div><h2>{task.title}</h2><p>{task.description}</p><div className="task-footer"><div className="task-tags"><span>Praktik</span><span>Langkah kecil</span></div><button className="done-button" disabled={saving} onClick={() => onComplete(task.id)}>{saving ? "Menyimpan..." : "Tandai selesai"}</button></div></article>;
 }
 
-function PlanView({ data, onComplete, savingTask }: { data: DashboardData; onComplete: (id: string, milestoneId: string) => void; savingTask: string | null }) {
-  return <><header className="content-head"><div><p className="eyebrow"><span /> Rencana belajarmu</p><h1>{data.plan.title}</h1><p>{data.profile.hours} · Target {data.profile.timeline} · {data.plan.completedTasks}/{data.plan.totalTasks} tugas selesai</p></div><Link className="secondary-button" href="/workspace/profile"><Pencil size={15} /> Sesuaikan</Link></header><div className="plan-stack">{data.plan.milestones.map((milestone) => <article className={`milestone-card ${milestone.done ? "done" : ""}`} key={milestone.id}><header><span className="timeline-dot">{milestone.done ? <Check size={13} /> : milestone.position + 1}</span><div><p>{milestone.range}</p><h2>{milestone.title}</h2><span>{milestone.description}</span></div><b>{milestone.tasks.filter((task) => task.status === "completed").length}/{milestone.tasks.length}</b></header><div className="task-list">{milestone.tasks.map((task) => <div key={task.id} className={task.status === "completed" ? "task-row done" : "task-row"}><span>{task.status === "completed" ? <Check size={15} /> : <Clock3 size={15} />}</span><div><h3>{task.title}</h3><p>{task.estimatedMinutes} menit · {task.description}</p></div>{task.status === "completed" ? <em>Selesai</em> : <button disabled={savingTask === task.id} onClick={() => onComplete(task.id, milestone.id)}>{savingTask === task.id ? "..." : "Selesaikan"}</button>}</div>)}</div></article>)}</div>{data.history.length > 0 && <section className="history-section"><p className="eyebrow"><span /> Capaian tersimpan</p><h2>Rencana sebelumnya</h2><p>Tugas yang sudah kamu selesaikan tetap aman saat kamu menyesuaikan rencana.</p>{data.history.map((item) => <div key={item.id}><Check size={15} /> {item.title}</div>)}</section>}</>;
+function PlanView({ data, onComplete, savingTask }: { data: DashboardData; onComplete: (id: string) => void; savingTask: string | null }) {
+  return <><header className="content-head"><div><p className="eyebrow"><span /> Rencana belajarmu</p><h1>{data.plan.title}</h1><p>{data.profile.hours} · Target {data.profile.timeline} · {data.plan.completedTasks}/{data.plan.totalTasks} tugas selesai</p></div><Link className="secondary-button" href="/workspace/profile"><Pencil size={15} /> Sesuaikan</Link></header><div className="plan-stack">{data.plan.milestones.map((milestone) => <article className={`milestone-card ${milestone.done ? "done" : ""}`} key={milestone.id}><header><span className="timeline-dot">{milestone.done ? <Check size={13} /> : milestone.position + 1}</span><div><p>{milestone.range}</p><h2>{milestone.title}</h2><span>{milestone.description}</span></div><b>{milestone.tasks.filter((task) => task.status === "completed").length}/{milestone.tasks.length}</b></header><div className="task-list">{milestone.tasks.map((task) => <div key={task.id} className={task.status === "completed" ? "task-row done" : "task-row"}><span>{task.status === "completed" ? <Check size={15} /> : <Clock3 size={15} />}</span><div><h3>{task.title}</h3><p>{task.estimatedMinutes} menit · {task.description}</p></div>{task.status === "completed" ? <em>Selesai</em> : <button disabled={savingTask === task.id} onClick={() => onComplete(task.id)}>{savingTask === task.id ? "..." : "Selesaikan"}</button>}</div>)}</div></article>)}</div>{data.history.length > 0 && <section className="history-section"><p className="eyebrow"><span /> Capaian tersimpan</p><h2>Rencana sebelumnya</h2><p>Tugas yang sudah kamu selesaikan tetap aman saat kamu menyesuaikan rencana.</p>{data.history.map((item) => <div key={item.id}><Check size={15} /> {item.title}</div>)}</section>}</>;
 }
 
 function ChatView({ data, message, onChange, onSubmit, loading }: { data: DashboardData; message: string; onChange: (value: string) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; loading: boolean }) {
