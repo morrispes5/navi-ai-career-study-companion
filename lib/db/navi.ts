@@ -1,8 +1,9 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { chatMessages, conversations, learningPlans, memoryFacts, planMilestones, planTasks, profiles } from "../../db/schema";
+import { chatMessages, conversations, learningPlans, memoryFacts, planMilestones, planTasks, profiles, rateLimits } from "../../db/schema";
 import { buildPlanTemplate, rangeLabel } from "../navi/templates";
 import { numberFromLabel, toDbLevel, type NaviProfile } from "../navi/profile";
 import type { NaviDb } from "./client";
+import { generateStudyPlan, type GenerateOptions, type PlanResult } from "../server/plan-generator";
 
 /*
  * Data layer Navi. SETIAP fungsi menerima `userId` dari session server dan
@@ -66,17 +67,20 @@ export async function getActivePlan(db: NaviDb, userId: string) {
 type Tx = Parameters<Parameters<NaviDb["transaction"]>[0]>[0];
 type Exec = NaviDb | Tx;
 
-export async function createPlanForUser(db: NaviDb, userId: string, profile: NaviProfile) {
-  return db.transaction((tx) => insertPlan(tx, userId, profile));
+/** Gemini (or template fallback) is generated BEFORE the transaction so no DB tx stays open during the AI call. */
+export async function createPlanForUser(db: NaviDb, userId: string, profile: NaviProfile, opts?: GenerateOptions) {
+  const generated = await generateStudyPlan(profile, opts);
+  return db.transaction((tx) => insertPlan(tx, userId, profile, generated));
 }
 
-async function insertPlan(tx: Tx, userId: string, profile: NaviProfile) {
-  const template = buildPlanTemplate(profile);
+async function insertPlan(tx: Tx, userId: string, profile: NaviProfile, generated: PlanResult) {
+  const template = generated.milestones;
+  const weeklyHours = numberFromLabel(profile.hours) ?? 0;
   {
-    const [plan] = await tx.insert(learningPlans).values({ userId, title: `Jalur ${profile.role}`, status: "active", source: "template" }).returning({ id: learningPlans.id });
+    const [plan] = await tx.insert(learningPlans).values({ userId, title: generated.title, summary: `${generated.source === "gemini" ? "Gemini" : "Template v1"} · ${weeklyHours} jam/minggu`, status: "active", source: generated.source }).returning({ id: learningPlans.id });
     for (const [mPos, milestone] of template.entries()) {
       const [m] = await tx.insert(planMilestones).values({ userId, planId: plan.id, position: mPos, title: milestone.title, description: milestone.description }).returning({ id: planMilestones.id });
-      if (milestone.tasks.length) await tx.insert(planTasks).values(milestone.tasks.map((task, tPos) => ({ userId, milestoneId: m.id, position: tPos, title: task.title, estimatedMinutes: task.minutes })));
+      if (milestone.tasks.length) await tx.insert(planTasks).values(milestone.tasks.map((task, tPos) => ({ userId, milestoneId: m.id, position: tPos, title: task.title, description: task.description, estimatedMinutes: task.minutes })));
     }
     return plan.id;
   }
@@ -95,13 +99,16 @@ export async function seedInitialNaviData(db: NaviDb, userId: string, profile: N
   return createPlanForUser(db, userId, profile);
 }
 
-export async function applyReplan(db: NaviDb, userId: string, next: NaviProfile) {
+export const REPLAN_LIMIT = { max: 3, windowSeconds: 3600 } as const;
+
+export async function applyReplan(db: NaviDb, userId: string, next: NaviProfile, opts?: GenerateOptions) {
   const row = profileRow(userId, next);
+  const generated = await generateStudyPlan(next, opts);
   // Arsip + update profil + rencana baru dalam satu transaksi agar tidak setengah jadi.
   return db.transaction(async (tx) => {
     await archiveActivePlans(tx, userId);
     await tx.update(profiles).set({ ...row, updatedAt: new Date() }).where(eq(profiles.userId, userId));
-    return insertPlan(tx, userId, next);
+    return insertPlan(tx, userId, next, generated);
   });
 }
 
@@ -113,12 +120,13 @@ export async function loadDashboard(db: NaviDb, userId: string): Promise<Dashboa
   if (!plan) throw new Error("Rencana belum tersedia.");
 
   const weeklyHours = numberFromLabel(profile.hours) ?? 1;
-  const template = buildPlanTemplate(profile);
+  // Older template rows (before 0001) have no stored description: fall back to the template text.
+  const template = plan.source === "template" ? buildPlanTemplate(profile) : [];
   const milestoneRows = await db.select().from(planMilestones).where(and(eq(planMilestones.userId, userId), eq(planMilestones.planId, plan.id))).orderBy(asc(planMilestones.position));
   const ids = milestoneRows.map((m) => m.id);
   const taskRows = ids.length ? await db.select().from(planTasks).where(and(eq(planTasks.userId, userId), inArray(planTasks.milestoneId, ids))).orderBy(asc(planTasks.position)) : [];
   const positionOf = new Map(milestoneRows.map((m) => [m.id, m.position]));
-  const tasks: PlanTask[] = taskRows.map((t) => ({ id: t.id, milestoneId: t.milestoneId, title: t.title, description: template[positionOf.get(t.milestoneId) ?? -1]?.tasks[t.position]?.description ?? "", estimatedMinutes: t.estimatedMinutes ?? 45, status: t.completedAt ? "completed" : "pending", position: t.position }));
+  const tasks: PlanTask[] = taskRows.map((t) => ({ id: t.id, milestoneId: t.milestoneId, title: t.title, description: t.description ?? template[positionOf.get(t.milestoneId) ?? -1]?.tasks[t.position]?.description ?? "", estimatedMinutes: t.estimatedMinutes ?? 45, status: t.completedAt ? "completed" : "pending", position: t.position }));
   const milestones: PlanMilestone[] = milestoneRows.map((m) => {
     const own = tasks.filter((t) => t.milestoneId === m.id);
     return { id: m.id, title: m.title, description: m.description ?? "", range: rangeLabel(m.position, weeklyHours), done: own.length > 0 && own.every((t) => t.status === "completed"), position: m.position, tasks: own };
@@ -180,4 +188,13 @@ export async function addChatMessage(db: NaviDb, userId: string, conversationId:
   if (!(await findConversation(db, userId, conversationId))) throw new Error("Percakapan tidak ditemukan.");
   await db.insert(chatMessages).values({ userId, conversationId, role, content, source });
   await db.update(conversations).set({ updatedAt: new Date() }).where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)));
+}
+
+/** Fixed-window rate limit on the rate_limits table. Returns true if the call is allowed. */
+export async function consumeRateLimit(db: NaviDb, key: string, limit: number, windowSeconds: number, now = Date.now()) {
+  const windowStart = Math.floor(now / 1000 / windowSeconds) * windowSeconds;
+  const [row] = await db.insert(rateLimits).values({ key, windowStart, count: 1 })
+    .onConflictDoUpdate({ target: [rateLimits.key, rateLimits.windowStart], set: { count: sql`${rateLimits.count} + 1` } })
+    .returning({ count: rateLimits.count });
+  return (row?.count ?? 1) <= limit;
 }

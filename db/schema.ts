@@ -84,6 +84,7 @@ export const planTasks = sqliteTable("plan_tasks", {
   milestoneId: text("milestone_id").notNull().references(() => planMilestones.id, { onDelete: "cascade" }),
   position: integer("position").notNull(),
   title: text("title").notNull(),
+  description: text("description"),
   resourceUrl: text("resource_url"),
   estimatedMinutes: integer("estimated_minutes"),
   completedAt: integer("completed_at", { mode: "timestamp" }),

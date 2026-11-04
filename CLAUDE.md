@@ -2,7 +2,7 @@
 
 ## Arsitektur target
 - Next.js 15 App Router, TypeScript strict, Zod v4.
-- DB: **Turso (libSQL)** via `drizzle-orm/libsql` + `@libsql/client`. Schema: `db/schema.ts`, client: `lib/db/client.ts`, migrasi: `db/` (`0000_init.sql` + `db/meta/_journal.json`) (drizzle-kit, dialect `turso`). **Bukan Supabase, bukan Neon.**
+- DB: **Turso (libSQL)** via `drizzle-orm/libsql` + `@libsql/client`. Schema: `db/schema.ts`, client: `lib/db/client.ts`, migrasi: `db/` (`0000_init.sql`, `0001_plan_task_description.sql` + `db/meta/_journal.json`) (drizzle-kit, dialect `turso`). **Bukan Supabase, bukan Neon.**
 - Auth: **Better Auth** (`lib/auth.ts`, drizzleAdapter provider `sqlite`, email+password, Google opsional), route `app/api/auth/[...all]`, email via Resend.
 - AI: `@google/genai` (`GEMINI_API_KEY`, `GEMINI_MODEL`), semua output JSON divalidasi Zod, fallback fixture bila gagal. Chat mentor `app/api/chat`, generator rencana `app/api/plan/generate`, review CV `app/api/cv/review`.
 - Fitur: job tracker (port dari `morrispes5/sei-job-tracker`), CV review, saran lowongan, streak, reminder (Vercel Cron `/api/cron/reminders` + `CRON_SECRET`), dashboard progres, rate limit `/api/chat`.
