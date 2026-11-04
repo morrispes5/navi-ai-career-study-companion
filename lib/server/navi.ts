@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb, schema } from "../db";
 import { buildPlanTemplate, rangeLabel } from "../navi/templates";
+import { generateStudyPlan } from "./plan-generator";
 import type { DashboardData, NaviMemory, NaviProfile } from "../navi/types";
 
 /**
@@ -68,8 +69,10 @@ async function upsertProfile(userId: string, profile: NaviProfile) {
 async function createPlanForUser(userId: string, profile: NaviProfile) {
   const db = getDb();
   const weeklyHours = toDbProfile(profile).weeklyHours;
-  const [plan] = await db.insert(learningPlans).values({ userId, title: `Jalur ${profile.role}`, summary: `Template v1 · ${weeklyHours} jam/minggu`, source: "template", status: "active" }).returning({ id: learningPlans.id });
-  const template = buildPlanTemplate(profile);
+  const generated = await generateStudyPlan(profile);
+  const summary = generated.source === "gemini" ? `Gemini · ${weeklyHours} jam/minggu` : `Template v1 · ${weeklyHours} jam/minggu`;
+  const [plan] = await db.insert(learningPlans).values({ userId, title: generated.title, summary, source: generated.source, status: "active" }).returning({ id: learningPlans.id });
+  const template = generated.milestones;
   for (const [position, milestone] of template.entries()) {
     const [row] = await db.insert(planMilestones).values({ userId, planId: plan.id, position, title: milestone.title, description: milestone.description }).returning({ id: planMilestones.id });
     if (milestone.tasks.length) {

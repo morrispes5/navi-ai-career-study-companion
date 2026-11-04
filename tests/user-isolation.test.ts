@@ -9,6 +9,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 const file = join(tmpdir(), `navi-test-${process.pid}.db`);
 process.env.TURSO_DATABASE_URL = `file:${file}`;
 delete process.env.TURSO_AUTH_TOKEN;
+// Keep the data-layer tests offline and deterministic: no Gemini key means the template path is used.
+delete process.env.GEMINI_API_KEY;
 
 const profile = { role: "Frontend Developer", level: "Baru mulai", hours: "6 jam per minggu", timeline: "3 bulan", preference: "Belajar lewat membangun proyek" };
 
