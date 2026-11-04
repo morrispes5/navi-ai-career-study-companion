@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { ArrowRight, Check, Sparkles } from "lucide-react";
 import { PasswordField } from "../components/password-field";
-import { authErrorMessage } from "../../lib/supabase/auth-errors";
-import { createClient } from "../../lib/supabase/client";
-import { clearOnboardingDraft, readOnboardingDraft, seedInitialNaviData, type NaviProfile } from "../../lib/supabase/navi";
+import { authErrorMessage } from "../../lib/auth/errors";
+import { authClient } from "../../lib/auth/client";
+import { clearOnboardingDraft, readOnboardingDraft } from "../../lib/navi/draft";
+import { getSessionInfo, seedInitialNaviData } from "../../lib/navi/actions";
+import type { NaviProfile } from "../../lib/navi/profile";
 
 export default function SignupPage() {
   const router = useRouter(); const [draft, setDraft] = useState<NaviProfile | null>(null);
@@ -20,17 +22,14 @@ export default function SignupPage() {
     if (password.length < 8) { setError("Password minimal 8 karakter."); return; }
     if (password !== confirmPassword) { setError("Konfirmasi password belum sama."); return; }
     setLoading(true);
-    const supabase = createClient();
-    const { data: currentUserData } = await supabase.auth.getUser();
-    if (currentUserData.user) {
+    if (await getSessionInfo().catch(() => null)) {
       try { await seedInitialNaviData(draft); clearOnboardingDraft(); window.location.assign("/workspace"); }
       catch { setLoading(false); setError("Akun sudah aktif, tetapi rencana belum tersambung. Coba lagi sebentar—proses ini aman diulang."); }
       return;
     }
-    const emailRedirectTo = `${window.location.origin}/signup/complete`;
-    const { data, error: signUpError } = await supabase.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo } });
+    const cleanEmail = email.trim();
+    const { error: signUpError } = await authClient.signUp.email({ email: cleanEmail, password, name: cleanEmail.split("@")[0] || "Navi" });
     if (signUpError) { setLoading(false); setError(authErrorMessage(signUpError, "signup")); return; }
-    if (!data.session) { setLoading(false); setStatus("Akunmu sudah dibuat. Cek email konfirmasi, lalu kembali dan tekan Masuk. Jawaban onboarding tetap tersimpan di perangkat ini."); return; }
     try { await seedInitialNaviData(draft); clearOnboardingDraft(); window.location.assign("/workspace"); }
     catch { setLoading(false); setError("Akun berhasil dibuat, tetapi rencana belum tersambung. Tekan lagi tombol di bawah untuk melanjutkan—proses ini aman diulang."); }
   }
