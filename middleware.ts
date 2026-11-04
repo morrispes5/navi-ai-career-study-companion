@@ -6,4 +6,4 @@ export function middleware(request: NextRequest) {
   if (!getSessionCookie(request)) return NextResponse.redirect(new URL("/login", request.url));
   return NextResponse.next();
 }
-export const config = { matcher: ["/workspace/:path*"] };
+export const config = { matcher: ["/workspace", "/workspace/:path*"] };

@@ -79,6 +79,9 @@ describe("data layer user_id scoping", () => {
     const a = await navi.loadDashboard(db, "alice");
     expect(a?.history).toHaveLength(1);
     expect(a?.profile.hours).toBe("10 jam per minggu");
-    expect((await navi.loadDashboard(db, "bob"))?.plan.id).toBe(bobBefore?.plan.id);
+    const b = await navi.loadDashboard(db, "bob");
+    expect(b?.plan.id).toBe(bobBefore?.plan.id);
+    expect(b?.history).toHaveLength(0);
+    expect(b?.plan.milestones.flatMap((m) => m.tasks).some((t) => a!.plan.milestones.some((am) => am.id === t.milestoneId))).toBe(false);
   });
 });

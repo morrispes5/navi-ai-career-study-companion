@@ -63,19 +63,26 @@ export async function getActivePlan(db: NaviDb, userId: string) {
   return db.query.learningPlans.findFirst({ where: and(eq(learningPlans.userId, userId), eq(learningPlans.status, "active")), orderBy: desc(learningPlans.createdAt) });
 }
 
+type Tx = Parameters<Parameters<NaviDb["transaction"]>[0]>[0];
+type Exec = NaviDb | Tx;
+
 export async function createPlanForUser(db: NaviDb, userId: string, profile: NaviProfile) {
+  return db.transaction((tx) => insertPlan(tx, userId, profile));
+}
+
+async function insertPlan(tx: Tx, userId: string, profile: NaviProfile) {
   const template = buildPlanTemplate(profile);
-  return db.transaction(async (tx) => {
+  {
     const [plan] = await tx.insert(learningPlans).values({ userId, title: `Jalur ${profile.role}`, status: "active", source: "template" }).returning({ id: learningPlans.id });
     for (const [mPos, milestone] of template.entries()) {
       const [m] = await tx.insert(planMilestones).values({ userId, planId: plan.id, position: mPos, title: milestone.title, description: milestone.description }).returning({ id: planMilestones.id });
       if (milestone.tasks.length) await tx.insert(planTasks).values(milestone.tasks.map((task, tPos) => ({ userId, milestoneId: m.id, position: tPos, title: task.title, estimatedMinutes: task.minutes })));
     }
     return plan.id;
-  });
+  }
 }
 
-export async function archiveActivePlans(db: NaviDb, userId: string) {
+export async function archiveActivePlans(db: Exec, userId: string) {
   await db.update(learningPlans).set({ status: "archived", updatedAt: new Date() }).where(and(eq(learningPlans.userId, userId), eq(learningPlans.status, "active")));
 }
 
@@ -89,10 +96,13 @@ export async function seedInitialNaviData(db: NaviDb, userId: string, profile: N
 }
 
 export async function applyReplan(db: NaviDb, userId: string, next: NaviProfile) {
-  await archiveActivePlans(db, userId);
   const row = profileRow(userId, next);
-  await db.update(profiles).set({ ...row, updatedAt: new Date() }).where(eq(profiles.userId, userId));
-  return createPlanForUser(db, userId, next);
+  // Arsip + update profil + rencana baru dalam satu transaksi agar tidak setengah jadi.
+  return db.transaction(async (tx) => {
+    await archiveActivePlans(tx, userId);
+    await tx.update(profiles).set({ ...row, updatedAt: new Date() }).where(eq(profiles.userId, userId));
+    return insertPlan(tx, userId, next);
+  });
 }
 
 export async function loadDashboard(db: NaviDb, userId: string): Promise<DashboardData | null> {
