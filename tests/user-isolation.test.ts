@@ -62,4 +62,28 @@ describe("data layer user isolation", () => {
     expect(dash.plan.title).toBe("Jalur Backend Developer");
     expect(dash.history).toHaveLength(1);
   });
+
+  it("never shows one user's plan or plan history to another user", async () => {
+    await navi.seedInitialNaviData("user-b", { ...profile, role: "Data Analyst" });
+    const a = await navi.loadDashboard("user-a");
+    const b = await navi.loadDashboard("user-b");
+    expect(b.plan.id).not.toBe(a.plan.id);
+    expect(b.plan.title).toBe("Jalur Data Analyst");
+    expect(b.history).toEqual([]);
+    const aIds = new Set([a.plan.id, ...a.history.map((h) => h.id), ...a.plan.milestones.flatMap((m) => m.tasks.map((t) => t.id))]);
+    expect(b.plan.milestones.flatMap((m) => m.tasks.map((t) => t.id)).some((id) => aIds.has(id))).toBe(false);
+    expect((await navi.getActivePlanSummary("user-b"))?.id).toBe(b.plan.id);
+    // B replanning must not archive or touch A's active plan.
+    await navi.applyReplan("user-b", { ...profile, role: "QA Engineer" });
+    const aAfter = await navi.loadDashboard("user-a");
+    expect(aAfter.plan.id).toBe(a.plan.id);
+    expect(aAfter.history.map((h) => h.id)).toEqual(a.history.map((h) => h.id));
+    expect((await navi.loadDashboard("user-b")).history.map((h) => h.id)).toEqual([b.plan.id]);
+  });
+
+  it("addChatMessage refuses to write into another user's conversation", async () => {
+    const conv = await navi.getOrCreateConversation("user-a");
+    await expect(navi.addChatMessage("user-b", conv!, "user", "intip")).rejects.toBeInstanceOf(navi.ConversationNotFoundError);
+    expect((await navi.loadDashboard("user-b")).messages).toEqual([]);
+  });
 });

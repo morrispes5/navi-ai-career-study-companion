@@ -12,6 +12,8 @@ const { profiles, learningPlans, planMilestones, planTasks, memoryFacts, convers
 
 export class MissingNaviProfileError extends Error { constructor() { super("Profil Navi belum dibuat."); this.name = "MissingNaviProfileError"; } }
 
+export class ConversationNotFoundError extends Error { constructor() { super("Percakapan tidak ditemukan."); this.name = "ConversationNotFoundError"; } }
+
 // ---------- profile mapping ----------
 // DB enum is beginner|intermediate|advanced; the exact UI label is kept in skills as "level:<label>".
 const LEVEL_MAP: Record<string, "beginner" | "intermediate" | "advanced"> = {
@@ -58,15 +60,18 @@ export async function getProfileRow(userId: string) {
   return row ?? null;
 }
 
-async function upsertProfile(userId: string, profile: NaviProfile) {
+async function upsertProfile(db: DbOrTx, userId: string, profile: NaviProfile) {
   const values = toDbProfile(profile);
-  await getDb().insert(profiles).values({ userId, ...values, onboardedAt: new Date() })
+  await db.insert(profiles).values({ userId, ...values, onboardedAt: new Date() })
     .onConflictDoUpdate({ target: profiles.userId, set: { ...values, updatedAt: new Date() } });
 }
 
 // ---------- plans ----------
-async function createPlanForUser(userId: string, profile: NaviProfile) {
-  const db = getDb();
+type Db = ReturnType<typeof getDb>;
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+type DbOrTx = Db | Tx;
+
+async function createPlanForUser(db: DbOrTx, userId: string, profile: NaviProfile) {
   const weeklyHours = toDbProfile(profile).weeklyHours;
   const [plan] = await db.insert(learningPlans).values({ userId, title: `Jalur ${profile.role}`, summary: `Template v1 · ${weeklyHours} jam/minggu`, source: "template", status: "active" }).returning({ id: learningPlans.id });
   const template = buildPlanTemplate(profile);
@@ -79,8 +84,8 @@ async function createPlanForUser(userId: string, profile: NaviProfile) {
   return plan.id;
 }
 
-async function archiveActivePlans(userId: string) {
-  await getDb().update(learningPlans).set({ status: "archived", updatedAt: new Date() }).where(and(eq(learningPlans.userId, userId), eq(learningPlans.status, "active")));
+async function archiveActivePlans(db: DbOrTx, userId: string) {
+  await db.update(learningPlans).set({ status: "archived", updatedAt: new Date() }).where(and(eq(learningPlans.userId, userId), eq(learningPlans.status, "active")));
 }
 
 async function getActivePlan(userId: string) {
@@ -99,11 +104,15 @@ async function planNeedsUpgrade(userId: string, planId: string) {
 
 /** Saves onboarding answers and makes sure an up-to-date active plan exists. Idempotent. */
 export async function seedInitialNaviData(userId: string, profile: NaviProfile) {
-  await upsertProfile(userId, profile);
+  const db = getDb();
+  await upsertProfile(db, userId, profile);
   const current = await getActivePlan(userId);
   if (current && !(await planNeedsUpgrade(userId, current.id))) return current.id;
-  if (current) await archiveActivePlans(userId);
-  return createPlanForUser(userId, profile);
+  // Archive + create atomically so a failure never leaves the user without an active plan.
+  return db.transaction(async (tx) => {
+    if (current) await archiveActivePlans(tx, userId);
+    return createPlanForUser(tx, userId, profile);
+  });
 }
 
 // ---------- memory ----------
@@ -163,7 +172,9 @@ export async function getOrCreateConversation(userId: string, conversationId?: s
 
 export async function addChatMessage(userId: string, conversationId: string, role: "user" | "assistant", content: string, source?: "gemini" | "fixture") {
   const db = getDb();
-  // conversationId must already be verified as owned by userId (getOrCreateConversation).
+  // Verify ownership here too, so callers can't accidentally write into another user's conversation.
+  const [owned] = await db.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId))).limit(1);
+  if (!owned) throw new ConversationNotFoundError();
   await db.insert(chatMessages).values({ userId, conversationId, role, content, source });
   await db.update(conversations).set({ updatedAt: new Date() }).where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)));
 }
@@ -224,7 +235,9 @@ export async function loadDashboard(userId: string): Promise<DashboardData> {
 
 // ---------- profile change proposal ----------
 export async function applyReplan(userId: string, next: NaviProfile) {
-  await archiveActivePlans(userId);
-  await upsertProfile(userId, next);
-  return createPlanForUser(userId, next);
+  return getDb().transaction(async (tx) => {
+    await archiveActivePlans(tx, userId);
+    await upsertProfile(tx, userId, next);
+    return createPlanForUser(tx, userId, next);
+  });
 }
