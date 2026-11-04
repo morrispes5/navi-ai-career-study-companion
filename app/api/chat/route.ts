@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { requireUserId } from "../../../lib/auth";
 import { addChatMessage, getActivePlanSummary, getOrCreateConversation, getProfileRow, listMemories } from "../../../lib/server/navi";
+import { getGeminiConfig } from "../../../lib/env";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -27,7 +28,8 @@ export async function POST(request: Request) {
   let reply: ChatReply = fixture(`${profile.weeklyHours ?? 0} jam per minggu`); let source = "fixture";
   const memoryContext = memories.map((item) => `- ${item.label}: ${item.value} (${item.reason})`).join("\n") || "Tidak ada catatan tambahan.";
   const planContext = plan ? `${plan.title}; target ${profile.targetRole}; ${profile.weeklyHours} jam/minggu; target ${profile.targetMonths ?? "belum pasti"} bulan.` : "Rencana belum tersedia.";
-  if (process.env.GEMINI_API_KEY) try { const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }); const result = await ai.interactions.create({ model: process.env.GEMINI_MODEL || "gemini-3.6-flash", system_instruction: instruction, input: `Profil: target ${profile.targetRole}; level ${profile.skills?.find((s) => s.startsWith("level:"))?.slice(6) ?? profile.currentLevel}; waktu ${profile.weeklyHours} jam/minggu; target ${profile.targetMonths ?? "belum pasti"} bulan; preferensi ${profile.learningPreference}.\nRencana aktif: ${planContext}\nCatatan pengguna:\n${memoryContext}\n\nPesan: ${parsed.data.message}`, response_format: responseFormat }); const raw = JSON.parse(result.output_text || "") as Record<string, unknown>; reply = responseSchema.parse({ answer: typeof raw.answer === "string" ? raw.answer.slice(0, 1600) : "", nextAction: typeof raw.nextAction === "string" ? raw.nextAction.slice(0, 240) : "", followUp: raw.followUp === null ? null : typeof raw.followUp === "string" ? raw.followUp.slice(0, 240) : "" }); source = "gemini"; } catch { /* fixture is intentional */ }
+  const gemini = getGeminiConfig();
+  if (gemini.apiKey) try { const ai = new GoogleGenAI({ apiKey: gemini.apiKey }); const result = await ai.interactions.create({ model: gemini.model, system_instruction: instruction, input: `Profil: target ${profile.targetRole}; level ${profile.skills?.find((s) => s.startsWith("level:"))?.slice(6) ?? profile.currentLevel}; waktu ${profile.weeklyHours} jam/minggu; target ${profile.targetMonths ?? "belum pasti"} bulan; preferensi ${profile.learningPreference}.\nRencana aktif: ${planContext}\nCatatan pengguna:\n${memoryContext}\n\nPesan: ${parsed.data.message}`, response_format: responseFormat }); const raw = JSON.parse(result.output_text || "") as Record<string, unknown>; reply = responseSchema.parse({ answer: typeof raw.answer === "string" ? raw.answer.slice(0, 1600) : "", nextAction: typeof raw.nextAction === "string" ? raw.nextAction.slice(0, 240) : "", followUp: raw.followUp === null ? null : typeof raw.followUp === "string" ? raw.followUp.slice(0, 240) : "" }); source = "gemini"; } catch { /* fixture is intentional */ }
   try { await addChatMessage(userId, conversationId, "assistant", `${reply.answer}\n\nLangkah berikutnya: ${reply.nextAction}${reply.followUp ? `\n\n${reply.followUp}` : ""}`, source === "gemini" ? "gemini" : "fixture"); }
   catch { return NextResponse.json({ error: "Jawaban Navi belum dapat disimpan." }, { status: 500 }); }
   return NextResponse.json({ ...reply, source, conversationId });

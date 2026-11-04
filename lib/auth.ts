@@ -4,6 +4,8 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
 import { headers } from "next/headers";
 import { getDb, schema } from "./db";
+import { getServerEnv, trustedOrigins } from "./env";
+import { escapeHtml } from "./html";
 
 async function sendEmail(to: string, subject: string, html: string) {
   const key = process.env.RESEND_API_KEY;
@@ -13,18 +15,20 @@ async function sendEmail(to: string, subject: string, html: string) {
 }
 
 function createAuth() {
+  const env = getServerEnv();
   const google = process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
     ? { google: { clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET } } : undefined;
   return betterAuth({
-    baseURL: process.env.BETTER_AUTH_URL,
-    secret: process.env.BETTER_AUTH_SECRET,
+    baseURL: env.BETTER_AUTH_URL,
+    secret: env.BETTER_AUTH_SECRET,
+    trustedOrigins: trustedOrigins(env),
     database: drizzleAdapter(getDb(), { provider: "sqlite", schema: { user: schema.users, session: schema.sessions, account: schema.accounts, verification: schema.verifications } }),
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 8,
       autoSignIn: true,
       sendResetPassword: async ({ user, url }) => {
-        await sendEmail(user.email, "Reset password Navi", `<p>Klik tautan ini untuk membuat password baru:</p><p><a href="${url}">${url}</a></p>`);
+        await sendEmail(user.email, "Reset password Navi", `<p>Klik tautan ini untuk membuat password baru:</p><p><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p>`);
       },
     },
     socialProviders: google,
