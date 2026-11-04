@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { getSessionUser } from "../../../lib/auth";
 import { getDb } from "../../../lib/db/client";
+import { getGeminiConfig } from "../../../lib/env";
 import { addChatMessage, createConversation, findConversation, getActivePlan, getProfile, listMemories } from "../../../lib/db/navi";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -34,9 +35,10 @@ export async function POST(request: Request) {
   let reply: ChatReply = fixture(profile.hours); let source: "gemini" | "fixture" = "fixture";
   const memoryContext = memories.map((item) => `- ${item.label}: ${item.value} (${item.reason})`).join("\n") || "Tidak ada catatan tambahan.";
   const planContext = plan ? `${plan.title}; target ${profile.role}; ${profile.hours}; target ${profile.timeline}.` : "Rencana belum tersedia.";
-  if (process.env.GEMINI_API_KEY) try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const result = await ai.interactions.create({ model: process.env.GEMINI_MODEL || "gemini-3.6-flash", system_instruction: instruction, input: `Profil: target ${profile.role}; level ${profile.level}; waktu ${profile.hours}; target ${profile.timeline}; preferensi ${profile.preference}.\nRencana aktif: ${planContext}\nCatatan pengguna:\n${memoryContext}\n\nPesan: ${parsed.data.message}`, response_format: responseFormat });
+  const gemini = getGeminiConfig();
+  if (gemini.apiKey) try {
+    const ai = new GoogleGenAI({ apiKey: gemini.apiKey });
+    const result = await ai.interactions.create({ model: gemini.model, system_instruction: instruction, input: `Profil: target ${profile.role}; level ${profile.level}; waktu ${profile.hours}; target ${profile.timeline}; preferensi ${profile.preference}.\nRencana aktif: ${planContext}\nCatatan pengguna:\n${memoryContext}\n\nPesan: ${parsed.data.message}`, response_format: responseFormat });
     const raw = JSON.parse(result.output_text || "") as Record<string, unknown>;
     reply = responseSchema.parse({ answer: typeof raw.answer === "string" ? raw.answer.slice(0, 1600) : "", nextAction: typeof raw.nextAction === "string" ? raw.nextAction.slice(0, 240) : "", followUp: raw.followUp === null ? null : typeof raw.followUp === "string" ? raw.followUp.slice(0, 240) : "" });
     source = "gemini";

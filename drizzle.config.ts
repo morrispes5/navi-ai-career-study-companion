@@ -4,7 +4,7 @@ import { defineConfig } from "drizzle-kit";
 // Jangan jalankan `drizzle-kit push` ke production. Gunakan `generate` untuk migrasi baru.
 export default defineConfig({
   schema: "./db/schema.ts",
-  out: "./db/migrations",
+  out: "./db",
   dialect: "turso",
   dbCredentials: { url: process.env.TURSO_DATABASE_URL ?? "file:local.db", authToken: process.env.TURSO_AUTH_TOKEN },
 });

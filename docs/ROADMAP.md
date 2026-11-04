@@ -7,7 +7,7 @@
 **Selesai jika:** repo tanpa file rahasia/duplikat, `npm run build` lulus.
 
 ## Fase 1 — Database Turso + Drizzle
-- `db/schema.ts`, `db/client.ts`, `drizzle.config.ts`, migrasi pertama.
+- `db/schema.ts`, `lib/db/client.ts`, `drizzle.config.ts`, migrasi pertama.
 - Ganti semua query di `lib/supabase/navi.ts` → `lib/db/*.ts` (selalu filter `userId`).
 **Selesai jika:** tidak ada import `@supabase/*`; data onboarding/plan/memory/chat tersimpan di Turso.
 
