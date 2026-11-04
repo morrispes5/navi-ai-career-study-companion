@@ -2,7 +2,7 @@
 
 ## Arsitektur target
 - Next.js 15 App Router, TypeScript strict, Zod v4.
-- DB: **Turso (libSQL)** via `drizzle-orm/libsql` + `@libsql/client`. Schema: `db/schema.ts`, client: `db/client.ts`, migrasi: `db/migrations` (drizzle-kit, dialect `turso`). **Bukan Supabase, bukan Neon.**
+- DB: **Turso (libSQL)** via `drizzle-orm/libsql` + `@libsql/client`. Schema: `db/schema.ts` (+ SQL awal `db/0000_init.sql`, sudah ter-apply di `morriztech`), client lazy: `lib/db/index.ts` (`getDb()`), data layer: `lib/server/navi.ts`, env: `lib/env.ts` (Zod, validasi lazy). Migrasi berikutnya: `npm run db:generate` (output sesuai `drizzle.config.ts`). **Bukan Supabase, bukan Neon.**
 - Auth: **Better Auth** (`lib/auth.ts`, drizzleAdapter provider `sqlite`, email+password, Google opsional), route `app/api/auth/[...all]`, email via Resend.
 - AI: `@google/genai` (`GEMINI_API_KEY`, `GEMINI_MODEL`), semua output JSON divalidasi Zod, fallback fixture bila gagal. Chat mentor `app/api/chat`, generator rencana `app/api/plan/generate`, review CV `app/api/cv/review`.
 - Fitur: job tracker (port dari `morrispes5/sei-job-tracker`), CV review, saran lowongan, streak, reminder (Vercel Cron `/api/cron/reminders` + `CRON_SECRET`), dashboard progres, rate limit `/api/chat`.
@@ -12,13 +12,13 @@
 - **Selalu filter `userId`** dari session server di setiap query/mutasi; jangan pernah percaya `userId` dari client.
 - **Jangan commit rahasia.** `.env*` (kecuali `.env.example`) di `.gitignore`. Rahasia tanpa prefix `NEXT_PUBLIC_`. Env divalidasi di `lib/env.ts`.
 - Hapus `.mcp.json` yang ter-commit (+ tambahkan ke `.gitignore`) dan folder screenshot duplikat `dokumentasi ss/` (simpan `docs/screenshots/`).
-- Akses DB hanya lewat `lib/db/*` (server-only). Tidak ada `@supabase/*` setelah Fase 1.
+- Akses DB hanya lewat `lib/db/index.ts` + `lib/server/navi.ts` (server-only). Guard `/workspace`: `middleware.ts` (cookie) + `app/workspace/layout.tsx` (session server). Tidak ada `@supabase/*` setelah Fase 1.
 - UI teks dalam Bahasa Indonesia. Commit kecil per fase, conventional commits.
 
-## Urutan migrasi (lihat docs/ROADMAP.md)
+## Urutan migrasi (lihat docs/ROADMAP.md) — Fase 0–2 selesai di PR #20
 0. Cleanup (.mcp.json, `dokumentasi ss/`, `lib/env.ts`).
-1. Turso + Drizzle: schema, migrasi, ganti `lib/supabase/navi.ts` → `lib/db/*`.
-2. Better Auth: ganti `lib/supabase/client.ts`/`auth-errors.ts`, halaman login/signup/forgot/update-password, middleware `/workspace`.
+1. Turso + Drizzle: schema, migrasi, `lib/supabase/navi.ts` (sudah dihapus) → `lib/server/navi.ts`.
+2. Better Auth: `lib/supabase/client.ts` (sudah dihapus) → `lib/auth.ts` + `lib/auth-client.ts`, halaman login/signup/forgot/update-password, middleware `/workspace`.
 3. Gemini: chat + rencana AI (Zod) + rate limit.
 4. Karier: job tracker, CV review, saran lowongan.
 5. Streak, activity log, dashboard, reminder cron.

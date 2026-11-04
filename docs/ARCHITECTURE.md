@@ -23,11 +23,13 @@ flowchart LR
 | Module | Code | Owns tables | Rules |
 |---|---|---|---|
 | **Auth** | `lib/auth.ts` (Better Auth, `drizzleAdapter` provider `sqlite`), `app/api/auth/[...all]`, `middleware.ts` (guards `/workspace`) | `user`, `session`, `account`, `verification` | Only Better Auth writes these. Other modules get `userId` only via `getSession()` on the server. |
-| **Data layer** | `db/schema.ts`, `db/client.ts`, `db/migrations`, `lib/db/*` (`server-only`) | all | Single entry for SQL. Each repo function takes `userId` as its first argument and always adds `eq(t.userId, userId)`. No DB import from client components. |
+| **Data layer** | `db/schema.ts`, `db/0000_init.sql`, `lib/db/index.ts`, `lib/server/navi.ts` (`server-only`) | all | Single entry for SQL. Each repo function takes `userId` as its first argument and always adds `eq(t.userId, userId)`. No DB import from client components. |
 | **AI services** | `lib/ai/gemini.ts`, `lib/ai/schemas.ts` (Zod), `lib/ai/prompts.ts`, `lib/ai/fixtures.ts`; routes `app/api/chat`, `app/api/plan/generate`, `app/api/cv/review` | writes via data layer: `conversations`, `chat_messages`, `learning_plans`, `plan_milestones`, `plan_tasks`, `cv_reviews`, `memory_facts`; reads `profiles` | All model output → `safeParse` → persist; never persist unvalidated output. Rate-limited. |
 | **Career** | `app/workspace/jobs`, `app/workspace/cv`, `lib/career/*` | `job_applications`, `cv_reviews` | Job tracker CRUD (port of `sei-job-tracker`), CV review (via AI services), job suggestions from `profiles.target_role`/`skills`. |
 | **Engagement** | `lib/engagement/*`, `app/workspace/dashboard`, `app/api/cron/reminders` | `streaks`, `activity_log`, `profiles` (reminder fields) | Every meaningful action appends `activity_log` and updates `streaks` using the user's `profiles.timezone` (YYYY-MM-DD). Cron sends reminders via Resend. |
-| Profile / onboarding | `app/onboarding`, `lib/db/profiles.ts` | `profiles` | 1:1 with `user`. |
+| Profile / onboarding | `app/signup` (onboarding), `lib/server/navi.ts` (profile functions) | `profiles` | 1:1 with `user`. |
+
+> Planned paths: modules such as `lib/ai/*`, `lib/career/*`, `lib/engagement/*`, `lib/db/rateLimit` and the `app/workspace/jobs|cv|dashboard` routes do not exist yet; they are targets for M2–M5.
 
 Dependency direction: UI → route/action → domain (`lib/career`, `lib/engagement`, `lib/ai`) → `lib/db/*` → Turso. AI services never import UI; data layer imports nothing app-specific.
 
