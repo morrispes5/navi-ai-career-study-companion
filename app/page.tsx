@@ -3,8 +3,9 @@
 import { ArrowRight, Check, ChevronLeft, Clock3, Compass, MessageCircle, Sparkles, Target } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { clearOnboardingDraft, readOnboardingDraft, saveOnboardingDraft, seedInitialNaviData, type NaviProfile } from "../lib/supabase/navi";
-import { createClient } from "../lib/supabase/client";
+import { clearOnboardingDraft, readOnboardingDraft, saveOnboardingDraft } from "../lib/navi/draft";
+import type { NaviProfile } from "../lib/navi/types";
+import { getSessionAction, seedInitialNaviDataAction } from "./actions/navi";
 
 type Screen = "landing" | "onboarding" | "summary";
 const emptyProfile: NaviProfile = { role: "", level: "", hours: "", timeline: "", preference: "" };
@@ -31,8 +32,7 @@ function HomeContent() {
   useEffect(() => {
     const draft = readOnboardingDraft();
     if (draft) setProfile(draft);
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => setHasSession(Boolean(data.user)));
+    getSessionAction().then((user) => setHasSession(Boolean(user))).catch(() => setHasSession(false));
   }, []);
 
   const current = steps[step];
@@ -51,7 +51,7 @@ function HomeContent() {
   const saveForCurrentUser = async () => {
     setSaving(true);
     setSummaryError("");
-    try { await seedInitialNaviData(profile); clearOnboardingDraft(); window.location.assign("/workspace"); }
+    try { const r = await seedInitialNaviDataAction(profile); if (!r.ok) throw new Error(r.error); clearOnboardingDraft(); window.location.assign("/workspace"); }
     catch { setSaving(false); setSummaryError("Rencana belum dapat disimpan. Coba lagi—jawabanmu tetap aman."); }
   };
 

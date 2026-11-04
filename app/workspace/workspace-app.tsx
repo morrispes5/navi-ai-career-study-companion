@@ -1,10 +1,14 @@
 "use client";
 
-import { Check, ChevronRight, CircleUserRound, Clock3, FileClock, Lightbulb, LogOut, MessageCircle, Pencil, Plus, Save, Send, Sparkles, Target, Trash2, UserRound, X } from "lucide-react";
+import { Check, ChevronRight, CircleUserRound, Clock3, FileClock, Lightbulb, LogOut, MessageCircle, Pencil, Plus, Send, Sparkles, Target, Trash2, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { applyReplan, clearMemories, clearOnboardingDraft, completeTask, createMemory, loadDashboard, MissingNaviProfileError, previewReplan, readOnboardingDraft, removeMemory, seedInitialNaviData, updateMemory, type DashboardData, type NaviMemory, type NaviProfile } from "../../lib/supabase/navi";
-import { createClient } from "../../lib/supabase/client";
+import { applyReplanAction, clearMemoriesAction, completeTaskAction, createMemoryAction, getSessionAction, loadDashboardAction, removeMemoryAction, seedInitialNaviDataAction, updateMemoryAction } from "../actions/navi";
+import { authClient } from "../../lib/auth-client";
+import { clearOnboardingDraft, readOnboardingDraft } from "../../lib/navi/draft";
+import { previewReplan, type ActionResult, type DashboardData, type NaviMemory, type NaviProfile } from "../../lib/navi/types";
+
+function unwrap<T>(result: ActionResult<T>): T { if (!result.ok) { if (result.code === "UNAUTHORIZED") window.location.assign("/login"); throw new Error(result.error); } return result.data; }
 
 export type WorkspaceView = "today" | "plan" | "chat" | "memory" | "profile";
 const roleOptions = ["Frontend Developer", "Backend Developer", "UI/UX Designer", "Data Analyst"];
@@ -32,7 +36,6 @@ const profileFacts = (profile: NaviProfile) => [
 export function WorkspaceApp({ view }: { view: WorkspaceView }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [email, setEmail] = useState("");
-  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -49,20 +52,17 @@ export function WorkspaceApp({ view }: { view: WorkspaceView }) {
 
   const refresh = useCallback(async () => {
     setLoading(true); setError("");
-    const supabase = createClient();
-    const { data: sessionData } = await supabase.auth.getSession();
-    const session = sessionData.session;
+    const session = await getSessionAction();
     if (!session) { window.location.assign("/login"); return; }
-    setAccessToken(session.access_token); setEmail(session.user.email ?? "");
+    setEmail(session.email ?? "");
     try {
-      let dashboard: DashboardData;
-      try { dashboard = await loadDashboard(); }
-      catch (loadError) {
-        if (!(loadError instanceof MissingNaviProfileError)) throw loadError;
+      let result = await loadDashboardAction();
+      if (!result.ok && result.code === "MISSING_PROFILE") {
         const draft = readOnboardingDraft();
         if (!draft) { setNeedsOnboarding(true); return; }
-        await seedInitialNaviData(draft); clearOnboardingDraft(); dashboard = await loadDashboard();
+        unwrap(await seedInitialNaviDataAction(draft)); clearOnboardingDraft(); result = await loadDashboardAction();
       }
+      const dashboard = unwrap(result);
       setData(dashboard); setEditedProfile(dashboard.profile); setNeedsOnboarding(false);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Koneksi data sempat terputus. Coba lagi sebentar.");
@@ -70,13 +70,7 @@ export function WorkspaceApp({ view }: { view: WorkspaceView }) {
   }, []);
 
   useEffect(() => {
-    const supabase = createClient();
-    refresh();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAccessToken(session?.access_token ?? null);
-      if (!session) window.location.assign("/login");
-    });
-    return () => subscription.unsubscribe();
+    void refresh();
   }, [refresh]);
 
   const notes = useMemo(() => data?.memories.filter((memory) => memory.category === "note") ?? [], [data]);
@@ -84,7 +78,7 @@ export function WorkspaceApp({ view }: { view: WorkspaceView }) {
 
   async function markDone(taskId: string, milestoneId: string) {
     setSavingTask(taskId); setError("");
-    try { await completeTask(taskId, milestoneId); setNotice("Tugas selesai. Navi sudah memilih langkah berikutnya."); await refresh(); }
+    try { void milestoneId; unwrap(await completeTaskAction(taskId)); setNotice("Tugas selesai. Navi sudah memilih langkah berikutnya."); await refresh(); }
     catch { setError("Tugas belum dapat diperbarui. Coba lagi."); }
     finally { setSavingTask(null); }
   }
@@ -97,13 +91,8 @@ export function WorkspaceApp({ view }: { view: WorkspaceView }) {
     const optimistic = { id: `local-${Date.now()}`, role: "user" as const, content: text, createdAt: new Date().toISOString() };
     setData({ ...data, messages: [...data.messages, optimistic] });
     try {
-      let token = accessToken;
-      if (!token) {
-        const { data: refreshed } = await createClient().auth.refreshSession();
-        token = refreshed.session?.access_token ?? null;
-      }
-      if (!token) throw new Error("Sesi berakhir. Silakan masuk kembali.");
-      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ message: text, conversationId: data.conversationId ?? undefined }) });
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, conversationId: data.conversationId ?? undefined }) });
+      if (response.status === 401) window.location.assign("/login");
       const result = await response.json() as { answer?: string; nextAction?: string; followUp?: string | null; conversationId?: string; error?: string };
       if (!response.ok || !result.answer || !result.nextAction) throw new Error(result.error ?? "Navi belum dapat membalas.");
       const reply = `${result.answer}\n\nLangkah berikutnya: ${result.nextAction}${result.followUp ? `\n\n${result.followUp}` : ""}`;
@@ -117,15 +106,15 @@ export function WorkspaceApp({ view }: { view: WorkspaceView }) {
     event.preventDefault();
     if (!memoryForm.label.trim() || !memoryForm.value.trim() || !memoryForm.reason.trim()) return;
     try {
-      if (editingMemory) await updateMemory(editingMemory.id, memoryForm); else await createMemory(memoryForm);
+      if (editingMemory) unwrap(await updateMemoryAction(editingMemory.id, memoryForm)); else unwrap(await createMemoryAction(memoryForm));
       setMemoryForm({ label: "", value: "", reason: "" }); setEditingMemory(null); setNotice(editingMemory ? "Memori diperbarui." : "Catatan untuk Navi ditambahkan."); await refresh();
     } catch { setError("Memori belum dapat disimpan."); }
   }
-  async function deleteMemory(id: string) { try { await removeMemory(id); setNotice("Memori dihapus."); await refresh(); } catch { setError("Memori belum dapat dihapus."); } }
-  async function deleteAllMemories() { if (!confirm("Hapus semua catatan yang dipakai Navi?")) return; try { await clearMemories(); setNotice("Semua catatan dihapus."); await refresh(); } catch { setError("Memori belum dapat dihapus."); } }
+  async function deleteMemory(id: string) { try { unwrap(await removeMemoryAction(id)); setNotice("Memori dihapus."); await refresh(); } catch { setError("Memori belum dapat dihapus."); } }
+  async function deleteAllMemories() { if (!confirm("Hapus semua catatan yang dipakai Navi?")) return; try { unwrap(await clearMemoriesAction()); setNotice("Semua catatan dihapus."); await refresh(); } catch { setError("Memori belum dapat dihapus."); } }
   function openProfileProposal() { if (!data || !editedProfile) return; if (JSON.stringify(data.profile) === JSON.stringify(editedProfile)) { setNotice("Belum ada perubahan profil untuk diterapkan."); return; } setProposalOpen(true); }
-  async function confirmReplan() { if (!editedProfile) return; setApplyingPlan(true); try { await applyReplan(editedProfile); setProposalOpen(false); setEditingProfile(false); setNotice("Rencana baru dibuat. Capaian lama tetap tersimpan di riwayat."); await refresh(); } catch { setError("Rencana belum dapat diperbarui."); } finally { setApplyingPlan(false); } }
-  async function logout() { await createClient().auth.signOut({ scope: "local" }); window.location.assign("/"); }
+  async function confirmReplan() { if (!editedProfile) return; setApplyingPlan(true); try { unwrap(await applyReplanAction(editedProfile)); setProposalOpen(false); setEditingProfile(false); setNotice("Rencana baru dibuat. Capaian lama tetap tersimpan di riwayat."); await refresh(); } catch { setError("Rencana belum dapat diperbarui."); } finally { setApplyingPlan(false); } }
+  async function logout() { await authClient.signOut(); window.location.assign("/"); }
 
   if (loading) return <main className="workspace-loader"><Logo /><p>Memuat rencana belajarmu...</p></main>;
   if (needsOnboarding) return <main className="workspace-loader"><Logo /><h1>Hubungkan rencanamu</h1><p>Akunmu sudah masuk, tetapi jawaban onboarding belum tersimpan. Isi lima pertanyaan agar rencanamu bisa dibuat.</p><Link className="primary-button" href="/?start=1">Lengkapi onboarding</Link><button className="back-button" onClick={logout}>Keluar akun</button></main>;

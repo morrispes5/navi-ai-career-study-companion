@@ -6,7 +6,8 @@ export async function GET() {
   return NextResponse.json({
     status: "ok",
     services: {
-      supabase: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
+      turso: Boolean(process.env.TURSO_DATABASE_URL),
+      auth: Boolean(process.env.BETTER_AUTH_SECRET),
       gemini: Boolean(process.env.GEMINI_API_KEY)
     }
   });
