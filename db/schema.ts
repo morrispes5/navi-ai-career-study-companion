@@ -121,8 +121,10 @@ export const jobApplications = sqliteTable("job_applications", {
   status: text("status", { enum: ["wishlist", "applied", "interview", "offer", "rejected", "ghosted"] }).notNull().default("wishlist"),
   appliedAt: integer("applied_at", { mode: "timestamp" }),
   notes: text("notes"),
+  /** Normalized dedupe key for rows saved from Navi job suggestions (null for manual rows). */
+  suggestionKey: text("suggestion_key"),
   createdAt: createdAt(), updatedAt: updatedAt(),
-}, (t) => [index("job_applications_user_idx").on(t.userId, t.status)]);
+}, (t) => [index("job_applications_user_idx").on(t.userId, t.status), uniqueIndex("job_applications_user_suggestion_key_uq").on(t.userId, t.suggestionKey)]);
 
 export const cvReviews = sqliteTable("cv_reviews", {
   id: id(), userId: userRef(),

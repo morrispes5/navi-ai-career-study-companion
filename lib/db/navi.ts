@@ -59,6 +59,12 @@ export async function getProfile(db: NaviDb, userId: string): Promise<NaviProfil
   return row ? viewProfile(row) : null;
 }
 
+/** Raw profile skills (minus internal "level:" markers), e.g. for prompting. */
+export async function getProfileSkills(db: NaviDb, userId: string): Promise<string[]> {
+  const row = await db.query.profiles.findFirst({ where: eq(profiles.userId, userId), columns: { skills: true } });
+  return (row?.skills ?? []).filter((s) => !s.startsWith(LEVEL_PREFIX));
+}
+
 export async function getActivePlan(db: NaviDb, userId: string) {
   return db.query.learningPlans.findFirst({ where: and(eq(learningPlans.userId, userId), eq(learningPlans.status, "active")), orderBy: desc(learningPlans.createdAt) });
 }

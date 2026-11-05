@@ -44,9 +44,6 @@ const defaultGenerate: GenerateFn = async ({ model, apiKey, system, input, signa
   return result.output_text || "";
 };
 
-/** Test hook: inject a mocked Gemini call (tests only). */
-export const jobGeminiOverride: { generate?: GenerateFn } = {};
-
 export type JobSuggestionsOutcome = { ok: true; result: JobSuggestionsResult; model: string } | { ok: false; reason: "no_key" | "timeout" | "error" | "invalid" };
 
 export async function generateJobSuggestions(profile: JobProfileInput, opts: { generate?: GenerateFn; timeoutMs?: number } = {}): Promise<JobSuggestionsOutcome> {
@@ -55,7 +52,7 @@ export async function generateJobSuggestions(profile: JobProfileInput, opts: { g
   const signal = AbortSignal.timeout(opts.timeoutMs ?? JOB_GEMINI_TIMEOUT_MS);
   let raw: string;
   try {
-    raw = await (opts.generate ?? jobGeminiOverride.generate ?? defaultGenerate)({ model: gemini.model, apiKey: gemini.apiKey, system: instruction, input: buildJobPrompt(profile), signal });
+    raw = await (opts.generate ?? defaultGenerate)({ model: gemini.model, apiKey: gemini.apiKey, system: instruction, input: buildJobPrompt(profile), signal });
   } catch (e) {
     const reason = signal.aborted ? "timeout" : "error";
     console.warn("[navi] Job suggestions Gemini fallback:", reason, e instanceof Error ? e.name : "");
