@@ -8,6 +8,13 @@
       "when": 1793804576438,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1793804724812,
+      "tag": "0001_plan_task_description",
+      "breakpoints": true
     }
   ]
 }
