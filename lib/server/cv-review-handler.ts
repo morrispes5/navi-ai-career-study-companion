@@ -61,7 +61,7 @@ export function createCvReviewPost(deps: CvReviewDeps = { generate: defaultGener
       console.warn("[navi] CV review unavailable:", outcome.reason);
       return NextResponse.json({ error: FALLBACK }, { status: 503 });
     }
-    const id = await saveCvReview(db, user.id, { targetRole, cvText, result: outcome.result, model: outcome.model });
+    const id = await saveCvReview(db, user.id, { targetRole, result: outcome.result, model: outcome.model });
     return NextResponse.json({ id, targetRole, ...outcome.result }, { status: 201 });
   };
 }

@@ -70,6 +70,20 @@ describe("CV review", () => {
     expect(stored?.rewrites).toHaveLength(1);
   });
 
+  it("never stores CV text and omits it from the detail response", async () => {
+    session.userId = "user-a";
+    const json = await (await post({ cvText: cv + " RAHASIA-PII-123" })).json();
+    const { cvReviews } = await import("../db/schema");
+    const { eq } = await import("drizzle-orm");
+    const [row] = await db.select({ cvText: cvReviews.cvText }).from(cvReviews).where(eq(cvReviews.id, json.id));
+    expect(row.cvText).toBe("");
+    const res = await detail.GET(new Request("http://x"), { params: Promise.resolve({ id: json.id }) });
+    const text = await res.text();
+    expect(res.status).toBe(200);
+    expect(text).not.toContain("RAHASIA-PII-123");
+    expect(JSON.parse(text).review ?? JSON.parse(text)).not.toHaveProperty("cvText");
+  });
+
   it("isolates users: B cannot list or read A's review", async () => {
     const [a] = await cvdb.listCvReviews(db, "user-a");
     session.userId = "user-b";

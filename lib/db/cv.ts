@@ -22,9 +22,16 @@ export async function refundCvReviewQuota(db: NaviDb, userId: string, now = Date
     .where(and(eq(rateLimits.key, `cv_review:${userId}`), eq(rateLimits.windowStart, windowStart)));
 }
 
-export async function saveCvReview(db: NaviDb, userId: string, input: { targetRole: string | null; cvText: string; result: CvReviewResult; model: string }) {
+/**
+ * CV text is never persisted (privacy): only the review result is stored.
+ * cv_text is NOT NULL in 0000 and SQLite can't relax that without a table rebuild,
+ * so we store an empty sentinel instead of the document.
+ */
+export const CV_TEXT_NOT_STORED = "";
+
+export async function saveCvReview(db: NaviDb, userId: string, input: { targetRole: string | null; result: CvReviewResult; model: string }) {
   const [row] = await db.insert(cvReviews).values({
-    userId, targetRole: input.targetRole, cvText: input.cvText, score: input.result.score,
+    userId, targetRole: input.targetRole, cvText: CV_TEXT_NOT_STORED, score: input.result.score,
     feedback: { strengths: input.result.strengths, improvements: input.result.weaknesses, keywords: input.result.keywordGaps, rewrites: input.result.rewrites, summary: input.result.summary, model: input.model },
   }).returning({ id: cvReviews.id });
   return row.id;
@@ -39,6 +46,6 @@ export async function getCvReview(db: NaviDb, userId: string, id: string) {
   const [row] = await db.select().from(cvReviews).where(and(eq(cvReviews.id, id), eq(cvReviews.userId, userId))).limit(1);
   if (!row) return null;
   const f = row.feedback ?? { strengths: [], improvements: [], keywords: [] };
-  return { id: row.id, targetRole: row.targetRole, score: row.score, createdAt: row.createdAt, cvText: row.cvText,
+  return { id: row.id, targetRole: row.targetRole, score: row.score, createdAt: row.createdAt,
     strengths: f.strengths, weaknesses: f.improvements, keywordGaps: f.keywords, rewrites: f.rewrites ?? [], summary: f.summary ?? "" };
 }
