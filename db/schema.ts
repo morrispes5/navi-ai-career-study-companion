@@ -144,9 +144,10 @@ export const jobApplicationContacts = sqliteTable("job_application_contacts", {
 export const cvReviews = sqliteTable("cv_reviews", {
   id: id(), userId: userRef(),
   targetRole: text("target_role"),
-  cvText: text("cv_text").notNull(),
+  /** Always "" — CV text is not stored (see lib/db/cv.ts). Kept for schema compatibility. */
+  cvText: text("cv_text").notNull().default(""),
   score: integer("score"), // 0-100
-  feedback: text("feedback", { mode: "json" }).$type<{ strengths: string[]; improvements: string[]; keywords: string[] }>(),
+  feedback: text("feedback", { mode: "json" }).$type<{ strengths: string[]; improvements: string[]; keywords: string[]; rewrites?: { original: string; suggestion: string }[]; summary?: string; model?: string }>(),
   createdAt: createdAt(),
 }, (t) => [index("cv_reviews_user_idx").on(t.userId)]);
 

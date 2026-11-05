@@ -1,6 +1,6 @@
 "use client";
 
-import { Briefcase, Check, ChevronRight, CircleUserRound, Clock3, FileClock, Lightbulb, LogOut, MessageCircle, Pencil, Plus, Send, Sparkles, Target, Trash2, UserRound, X } from "lucide-react";
+import { Briefcase, Check, ChevronRight, FileText, CircleUserRound, Clock3, FileClock, Lightbulb, LogOut, MessageCircle, Pencil, Plus, Send, Sparkles, Target, Trash2, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { applyReplan, clearMemories, completeTask, createMemory, getSessionInfo, loadDashboard, removeMemory, seedInitialNaviData, updateMemory } from "../../lib/navi/actions";
@@ -8,9 +8,10 @@ import { clearOnboardingDraft, readOnboardingDraft } from "../../lib/navi/draft"
 import { previewReplan, type NaviProfile } from "../../lib/navi/profile";
 import type { DashboardData, NaviMemory } from "../../lib/db/navi";
 import { authClient } from "../../lib/auth/client";
+import { CvReviewView } from "./cv-view";
 import { JobTracker } from "./jobs/job-tracker";
 
-export type WorkspaceView = "today" | "plan" | "chat" | "memory" | "profile" | "jobs";
+export type WorkspaceView = "today" | "plan" | "chat" | "memory" | "jobs" | "cv" | "profile";
 const roleOptions = ["Frontend Developer", "Backend Developer", "UI/UX Designer", "Data Analyst"];
 const levelOptions = ["Baru mulai", "Sudah memahami dasar HTML & CSS", "Pernah membuat beberapa proyek", "Sudah siap melamar"];
 const hourOptions = ["3 jam per minggu", "6 jam per minggu", "10 jam per minggu", "15+ jam per minggu"];
@@ -23,6 +24,7 @@ const navigation: { id: WorkspaceView; label: string; href: string; icon: typeof
   { id: "chat", label: "Chat", href: "/workspace/chat", icon: MessageCircle },
   { id: "memory", label: "Memori", href: "/workspace/memory", icon: Sparkles },
   { id: "jobs", label: "Lamaran", href: "/workspace/jobs", icon: Briefcase },
+  { id: "cv", label: "Review CV", href: "/workspace/cv", icon: FileText },
   { id: "profile", label: "Profil", href: "/workspace/profile", icon: UserRound }
 ];
 
@@ -125,6 +127,7 @@ export function WorkspaceApp({ view }: { view: WorkspaceView }) {
     {view === "jobs" && <JobTracker />}
     {view === "today" && <TodayView data={data} onComplete={markDone} savingTask={savingTask} />}
     {view === "plan" && <PlanView data={data} onComplete={markDone} savingTask={savingTask} />}
+    {view === "cv" && <CvReviewView defaultRole={data.profile.role} />}
     {view === "chat" && <ChatView data={data} message={message} onChange={setMessage} onSubmit={sendChat} loading={chatLoading} />}
     {view === "memory" && <MemoryView profile={data.profile} notes={notes} form={memoryForm} setForm={setMemoryForm} editing={editingMemory} setEditing={setEditingMemory} onSubmit={submitMemory} onDelete={deleteMemory} onClear={deleteAllMemories} />}
     {view === "profile" && editedProfile && <ProfileView data={data} profile={editedProfile} setProfile={setEditedProfile} editing={editingProfile} setEditing={setEditingProfile} proposalOpen={proposalOpen} proposal={proposal} applying={applyingPlan} onPreview={openProfileProposal} onCancelProposal={() => { setProposalOpen(false); setEditedProfile(data.profile); }} onApply={confirmReplan} onLogout={logout} />}
