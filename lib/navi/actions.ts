@@ -25,4 +25,14 @@ export async function createMemory(input: data.MemoryInput) { return data.create
 export async function updateMemory(id: string, input: data.MemoryInput) { return data.updateMemory(getDb(), await requireUserId(), idSchema.parse(id), memorySchema.parse(input)); }
 export async function removeMemory(id: string) { await data.removeMemory(getDb(), await requireUserId(), idSchema.parse(id)); }
 export async function clearMemories() { await data.clearMemories(getDb(), await requireUserId()); }
-export async function applyReplan(next: NaviProfile) { return data.applyReplan(getDb(), await requireUserId(), profileSchema.parse(next)); }
+export type ReplanResult = { ok: true; planId: string } | { ok: false; error: string };
+/** Rate-limited (rate_limits table): max REPLAN_LIMIT.max replans per user per hour, since each one may call Gemini. */
+export async function applyReplan(next: NaviProfile): Promise<ReplanResult> {
+  const userId = await requireUserId();
+  const profile = profileSchema.parse(next);
+  const db = getDb();
+  if (!(await data.consumeRateLimit(db, `replan:${userId}`, data.REPLAN_LIMIT.max, data.REPLAN_LIMIT.windowSeconds))) {
+    return { ok: false, error: "Kamu sudah memperbarui rencana beberapa kali dalam satu jam terakhir. Coba lagi nanti." };
+  }
+  return { ok: true, planId: await data.applyReplan(db, userId, profile) };
+}
