@@ -125,6 +125,22 @@ export const jobApplications = sqliteTable("job_applications", {
   createdAt: createdAt(), updatedAt: updatedAt(),
 }, (t) => [index("job_applications_user_idx").on(t.userId, t.status)]);
 
+// Ported from sei-job-tracker (application_notes / application_contacts). user_id is stored
+// on each row so every query can filter by owner without a join.
+export const jobApplicationNotes = sqliteTable("job_application_notes", {
+  id: id(), userId: userRef(),
+  applicationId: text("application_id").notNull().references(() => jobApplications.id, { onDelete: "cascade" }),
+  body: text("body").notNull(),
+  createdAt: createdAt(),
+}, (t) => [index("job_application_notes_app_idx").on(t.userId, t.applicationId)]);
+
+export const jobApplicationContacts = sqliteTable("job_application_contacts", {
+  id: id(), userId: userRef(),
+  applicationId: text("application_id").notNull().references(() => jobApplications.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), role: text("role"), email: text("email"), profileUrl: text("profile_url"),
+  createdAt: createdAt(),
+}, (t) => [index("job_application_contacts_app_idx").on(t.userId, t.applicationId)]);
+
 export const cvReviews = sqliteTable("cv_reviews", {
   id: id(), userId: userRef(),
   targetRole: text("target_role"),
