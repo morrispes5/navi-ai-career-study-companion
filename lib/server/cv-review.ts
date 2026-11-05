@@ -33,14 +33,11 @@ export function buildCvPrompt(cvText: string, targetRole: string) {
 
 export type GenerateFn = (args: { model: string; apiKey: string; system: string; input: string; signal: AbortSignal }) => Promise<string>;
 
-const defaultGenerate: GenerateFn = async ({ model, apiKey, system, input, signal }) => {
+export const defaultGenerate: GenerateFn = async ({ model, apiKey, system, input, signal }) => {
   const ai = new GoogleGenAI({ apiKey });
   const result = await ai.interactions.create({ model, system_instruction: system, input, response_format: responseFormat }, { signal, fetchOptions: { signal }, maxRetries: 0 });
   return result.output_text || "";
 };
-
-/** Test hook: inject a mocked Gemini call (tests only). */
-export const cvGeminiOverride: { generate?: GenerateFn } = {};
 
 export type CvReviewOutcome = { ok: true; result: CvReviewResult; model: string } | { ok: false; reason: "no_key" | "timeout" | "error" | "invalid" };
 
@@ -50,7 +47,7 @@ export async function generateCvReview(cvText: string, targetRole: string, opts:
   const signal = AbortSignal.timeout(opts.timeoutMs ?? CV_GEMINI_TIMEOUT_MS);
   let raw: string;
   try {
-    raw = await (opts.generate ?? cvGeminiOverride.generate ?? defaultGenerate)({ model: gemini.model, apiKey: gemini.apiKey, system: instruction, input: buildCvPrompt(cvText, targetRole), signal });
+    raw = await (opts.generate ?? defaultGenerate)({ model: gemini.model, apiKey: gemini.apiKey, system: instruction, input: buildCvPrompt(cvText, targetRole), signal });
   } catch (e) {
     const reason = signal.aborted ? "timeout" : "error";
     console.warn("[navi] CV review Gemini fallback:", reason, e instanceof Error ? e.name : "");

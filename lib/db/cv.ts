@@ -1,3 +1,4 @@
+import "server-only";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { cvReviews, rateLimits } from "../../db/schema";
 import type { NaviDb } from "./client";
@@ -12,6 +13,13 @@ export async function consumeCvReviewQuota(db: NaviDb, userId: string, now = Dat
     .onConflictDoUpdate({ target: [rateLimits.key, rateLimits.windowStart], set: { count: sql`${rateLimits.count} + 1` } })
     .returning({ count: rateLimits.count });
   return (row?.count ?? 1) <= CV_RATE_LIMIT.max;
+}
+
+/** Give back one unit of quota (used when the request fails after consuming it, e.g. bad input or Gemini down). */
+export async function refundCvReviewQuota(db: NaviDb, userId: string, now = Date.now()) {
+  const windowStart = Math.floor(now / 1000 / CV_RATE_LIMIT.windowSeconds) * CV_RATE_LIMIT.windowSeconds;
+  await db.update(rateLimits).set({ count: sql`max(${rateLimits.count} - 1, 0)` })
+    .where(and(eq(rateLimits.key, `cv_review:${userId}`), eq(rateLimits.windowStart, windowStart)));
 }
 
 export async function saveCvReview(db: NaviDb, userId: string, input: { targetRole: string | null; cvText: string; result: CvReviewResult; model: string }) {
