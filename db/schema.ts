@@ -147,7 +147,7 @@ export const cvReviews = sqliteTable("cv_reviews", {
   id: id(), userId: userRef(),
   targetRole: text("target_role"),
   /** Always "" — CV text is not stored (see lib/db/cv.ts). Kept for schema compatibility. */
-  cvText: text("cv_text").notNull().default(""),
+  cvText: text("cv_text").notNull(),
   score: integer("score"), // 0-100
   feedback: text("feedback", { mode: "json" }).$type<{ strengths: string[]; improvements: string[]; keywords: string[]; rewrites?: { original: string; suggestion: string }[]; summary?: string; model?: string }>(),
   createdAt: createdAt(),

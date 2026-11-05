@@ -15,6 +15,20 @@
       "when": 1793804724812,
       "tag": "0001_plan_task_description",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793843357579,
+      "tag": "0002_job_notes_contacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793843358226,
+      "tag": "0003_job_suggestion_dedupe",
+      "breakpoints": true
     }
   ]
 }
