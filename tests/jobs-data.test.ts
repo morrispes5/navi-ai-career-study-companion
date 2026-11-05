@@ -1,9 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { users } from "../db/schema";
 import { createDb, type NaviDb } from "../lib/db/client";
+import { migrationSql } from "./migrations";
 import * as jobs from "../lib/db/jobs";
 
 let dir: string; let db: NaviDb;
@@ -11,7 +12,7 @@ let dir: string; let db: NaviDb;
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "navi-jobs-"));
   db = createDb(`file:${join(dir, "test.db")}`);
-  await db.$client.executeMultiple(readFileSync(join(__dirname, "../db/0000_init.sql"), "utf8"));
+  await db.$client.executeMultiple(migrationSql());
   await db.$client.execute("PRAGMA foreign_keys = ON");
   await db.insert(users).values([{ id: "alice", name: "Alice", email: "a@x.id" }, { id: "bob", name: "Bob", email: "b@x.id" }]);
 });

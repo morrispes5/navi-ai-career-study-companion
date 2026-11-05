@@ -1,9 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { users } from "../db/schema";
 import { createDb, type NaviDb } from "../lib/db/client";
+import { migrationSql } from "./migrations";
 
 const state: { db: NaviDb | null; user: string | null } = { db: null, user: null };
 vi.mock("../lib/auth", () => ({ getSessionUser: async () => (state.user ? { id: state.user, email: `${state.user}@x.id` } : null) }));
@@ -16,7 +17,7 @@ let dir: string;
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "navi-jobact-"));
   state.db = createDb(`file:${join(dir, "test.db")}`);
-  for (const f of ["0000_init.sql", "0002_job_notes_contacts.sql"]) await state.db.$client.executeMultiple(readFileSync(join(__dirname, "../db", f), "utf8"));
+  await state.db.$client.executeMultiple(migrationSql());
   await state.db.$client.execute("PRAGMA foreign_keys = ON");
   await state.db.insert(users).values([{ id: "alice", name: "Alice", email: "a@x.id" }, { id: "bob", name: "Bob", email: "b@x.id" }]);
 });
