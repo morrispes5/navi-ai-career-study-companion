@@ -1,3 +1,3 @@
-import { JobTracker } from "./job-tracker";
+import { WorkspaceApp } from "../workspace-app";
 
-export default function WorkspaceJobsPage() { return <JobTracker />; }
+export default function WorkspaceJobsPage() { return <WorkspaceApp view="jobs" />; }

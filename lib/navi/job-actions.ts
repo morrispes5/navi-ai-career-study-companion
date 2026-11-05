@@ -38,8 +38,9 @@ export async function createJobAction(input: unknown) {
   const parsed = jobSchema.parse(input);
   return jobs.createJob(getDb(), await requireUserId(), { ...parsed, appliedAt: parsed.appliedAt ?? undefined });
 }
+/** Full replace of the editable fields (the edit form always sends every field). */
 export async function updateJobAction(id: unknown, input: unknown) {
-  const row = await jobs.updateJob(getDb(), await requireUserId(), idSchema.parse(id), jobSchema.partial().parse(input));
+  const row = await jobs.updateJob(getDb(), await requireUserId(), idSchema.parse(id), jobSchema.parse(input));
   if (!row) throw new Error("Lamaran tidak ditemukan.");
   return row;
 }
@@ -50,4 +51,38 @@ export async function setJobStatusAction(id: unknown, status: unknown) {
 }
 export async function deleteJobAction(id: unknown) {
   if (!(await jobs.deleteJob(getDb(), await requireUserId(), idSchema.parse(id)))) throw new Error("Lamaran tidak ditemukan.");
+}
+
+const noteSchema = z.object({ body: z.string().trim().min(1).max(2000) });
+const contactSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  role: optionalText(120),
+  email: z.string().trim().max(320).optional().nullable().transform((v) => (v ? v : null)).refine((v) => v === null || z.string().email().safeParse(v).success, "Email tidak valid"),
+  profileUrl: urlField,
+});
+const notFound = () => new Error("Lamaran tidak ditemukan.");
+
+export async function getJobDetailAction(id: unknown) {
+  const userId = await requireUserId(); const db = getDb(); const jobId = idSchema.parse(id);
+  const [notes, contacts] = await Promise.all([jobs.listNotes(db, userId, jobId), jobs.listContacts(db, userId, jobId)]);
+  if (!notes || !contacts) throw notFound();
+  return { notes, contacts };
+}
+export async function addNoteAction(jobId: unknown, input: unknown) {
+  const row = await jobs.addNote(getDb(), await requireUserId(), idSchema.parse(jobId), noteSchema.parse(input));
+  if (!row) throw notFound(); return row;
+}
+export async function deleteNoteAction(id: unknown) {
+  if (!(await jobs.deleteNote(getDb(), await requireUserId(), idSchema.parse(id)))) throw new Error("Catatan tidak ditemukan.");
+}
+export async function addContactAction(jobId: unknown, input: unknown) {
+  const row = await jobs.addContact(getDb(), await requireUserId(), idSchema.parse(jobId), contactSchema.parse(input));
+  if (!row) throw notFound(); return row;
+}
+export async function updateContactAction(id: unknown, input: unknown) {
+  const row = await jobs.updateContact(getDb(), await requireUserId(), idSchema.parse(id), contactSchema.parse(input));
+  if (!row) throw new Error("Kontak tidak ditemukan."); return row;
+}
+export async function deleteContactAction(id: unknown) {
+  if (!(await jobs.deleteContact(getDb(), await requireUserId(), idSchema.parse(id)))) throw new Error("Kontak tidak ditemukan.");
 }
