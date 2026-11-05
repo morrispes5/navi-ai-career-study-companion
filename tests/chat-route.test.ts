@@ -1,7 +1,8 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClient } from "@libsql/client";
+import { migrationSql } from "./migrations";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 // POST /api/chat with a mocked session: 401 without session, 404 for another user's conversation.
@@ -22,7 +23,7 @@ const req = (body: unknown) => new Request("http://localhost/api/chat", { method
 
 beforeAll(async () => {
   const client = createClient({ url: `file:${file}` });
-  await client.executeMultiple(readFileSync(join(__dirname, "../db/0000_init.sql"), "utf8"));
+  await client.executeMultiple(migrationSql());
   for (const id of ["user-a", "user-b"]) await client.execute({ sql: `INSERT INTO "user"(id,name,email) VALUES (?,?,?)`, args: [id, id, `${id}@test.dev`] });
   client.close();
   navi = await import("../lib/db/navi");
