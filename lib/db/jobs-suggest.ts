@@ -2,12 +2,14 @@ import "server-only";
 import { and, count, eq, sql } from "drizzle-orm";
 import { jobApplications, rateLimits } from "../../db/schema";
 import type { NaviDb } from "./client";
+import { JOB_MAX_PER_USER } from "./jobs";
+
+/** Same per-user cap as the job tracker (#24). */
+export { JOB_MAX_PER_USER };
 import type { JobSuggestion } from "../server/job-suggestions-schema";
 
 export const JOB_SUGGEST_RATE_LIMIT = { max: 10, windowSeconds: 3600 } as const;
 export const JOB_SAVE_RATE_LIMIT = { max: 30, windowSeconds: 3600 } as const;
-/** Same per-user cap as the job tracker (#24). */
-export const JOB_MAX_PER_USER = 1000;
 
 const windowStartFor = (now: number, w: number) => Math.floor(now / 1000 / w) * w;
 

@@ -8,7 +8,7 @@ Sumber kebenaran: `db/schema.ts`. Semua tabel domain punya `user_id` (FK ke `use
 | `profiles` | Hasil onboarding: target role, level, jam/minggu, preferensi, skill, zona waktu, jam reminder | 1:1 user |
 | `learning_plans` | Rencana belajar (template/gemini), status | N:1 user |
 | `plan_milestones` | Tahapan per rencana (urutan, minggu) | N:1 plan |
-| `plan_tasks` | Tugas per milestone, `completed_at` | N:1 milestone |
+| `plan_tasks` | Tugas per milestone, `description` (0001, nullable), `completed_at` | N:1 milestone |
 | `memory_facts` | Catatan/memori tentang user untuk konteks chat | N:1 user |
 | `conversations` / `chat_messages` | Riwayat chat mentor (role, source gemini/fixture) | N:1 |
 | `job_applications` | Job tracker (port dari sei-job-tracker), status kanban | N:1 user |

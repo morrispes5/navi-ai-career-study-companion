@@ -84,6 +84,7 @@ export const planTasks = sqliteTable("plan_tasks", {
   milestoneId: text("milestone_id").notNull().references(() => planMilestones.id, { onDelete: "cascade" }),
   position: integer("position").notNull(),
   title: text("title").notNull(),
+  description: text("description"),
   resourceUrl: text("resource_url"),
   estimatedMinutes: integer("estimated_minutes"),
   completedAt: integer("completed_at", { mode: "timestamp" }),
@@ -126,12 +127,29 @@ export const jobApplications = sqliteTable("job_applications", {
   createdAt: createdAt(), updatedAt: updatedAt(),
 }, (t) => [index("job_applications_user_idx").on(t.userId, t.status), uniqueIndex("job_applications_user_suggestion_key_uq").on(t.userId, t.suggestionKey)]);
 
+// Ported from sei-job-tracker (application_notes / application_contacts). user_id is stored
+// on each row so every query can filter by owner without a join.
+export const jobApplicationNotes = sqliteTable("job_application_notes", {
+  id: id(), userId: userRef(),
+  applicationId: text("application_id").notNull().references(() => jobApplications.id, { onDelete: "cascade" }),
+  body: text("body").notNull(),
+  createdAt: createdAt(),
+}, (t) => [index("job_application_notes_app_idx").on(t.userId, t.applicationId)]);
+
+export const jobApplicationContacts = sqliteTable("job_application_contacts", {
+  id: id(), userId: userRef(),
+  applicationId: text("application_id").notNull().references(() => jobApplications.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), role: text("role"), email: text("email"), profileUrl: text("profile_url"),
+  createdAt: createdAt(),
+}, (t) => [index("job_application_contacts_app_idx").on(t.userId, t.applicationId)]);
+
 export const cvReviews = sqliteTable("cv_reviews", {
   id: id(), userId: userRef(),
   targetRole: text("target_role"),
-  cvText: text("cv_text").notNull(),
+  /** Always "" — CV text is not stored (see lib/db/cv.ts). Kept for schema compatibility. */
+  cvText: text("cv_text").notNull().default(""),
   score: integer("score"), // 0-100
-  feedback: text("feedback", { mode: "json" }).$type<{ strengths: string[]; improvements: string[]; keywords: string[] }>(),
+  feedback: text("feedback", { mode: "json" }).$type<{ strengths: string[]; improvements: string[]; keywords: string[]; rewrites?: { original: string; suggestion: string }[]; summary?: string; model?: string }>(),
   createdAt: createdAt(),
 }, (t) => [index("cv_reviews_user_idx").on(t.userId)]);
 
