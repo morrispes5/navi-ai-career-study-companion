@@ -3,6 +3,7 @@ import { chatMessages, conversations, learningPlans, memoryFacts, planMilestones
 import { buildPlanTemplate, rangeLabel } from "../navi/templates";
 import { numberFromLabel, toDbLevel, type NaviProfile } from "../navi/profile";
 import type { NaviDb } from "./client";
+import { loadEngagementSummary, recordActivity, type EngagementSummary } from "./engagement";
 import { generateStudyPlan, type GenerateOptions, type PlanResult } from "../server/plan-generator";
 
 /*
@@ -22,6 +23,7 @@ export type DashboardData = {
   conversationId: string | null;
   messages: ChatMessage[];
   history: { id: string; title: string; archivedAt: string | null }[];
+  progress: EngagementSummary;
 };
 export type MemoryInput = Pick<NaviMemory, "label" | "value" | "reason">;
 
@@ -143,6 +145,7 @@ export async function loadDashboard(db: NaviDb, userId: string): Promise<Dashboa
   const conversation = await db.query.conversations.findFirst({ where: eq(conversations.userId, userId), orderBy: desc(conversations.updatedAt) });
   const messageRows = conversation ? await db.select().from(chatMessages).where(and(eq(chatMessages.userId, userId), eq(chatMessages.conversationId, conversation.id))).orderBy(asc(chatMessages.createdAt), asc(sql`rowid`)) : [];
   const historyRows = await db.select().from(learningPlans).where(and(eq(learningPlans.userId, userId), eq(learningPlans.status, "archived"))).orderBy(desc(learningPlans.updatedAt)).limit(3);
+  const progress = await loadEngagementSummary(db, userId);
 
   return {
     profile,
@@ -151,12 +154,17 @@ export async function loadDashboard(db: NaviDb, userId: string): Promise<Dashboa
     conversationId: conversation?.id ?? null,
     messages: messageRows.map((m) => ({ id: m.id, role: m.role === "assistant" ? "navi" : "user", content: m.content, createdAt: m.createdAt.toISOString() })),
     history: historyRows.map((p) => ({ id: p.id, title: p.title, archivedAt: p.updatedAt.toISOString() })),
+    progress,
   };
 }
 
 export async function completeTask(db: NaviDb, userId: string, taskId: string) {
-  const updated = await db.update(planTasks).set({ completedAt: new Date() }).where(and(eq(planTasks.id, taskId), eq(planTasks.userId, userId), isNull(planTasks.completedAt))).returning({ id: planTasks.id });
-  return updated.length > 0;
+  return db.transaction(async (tx) => {
+    const updated = await tx.update(planTasks).set({ completedAt: new Date() }).where(and(eq(planTasks.id, taskId), eq(planTasks.userId, userId), isNull(planTasks.completedAt))).returning({ id: planTasks.id, estimatedMinutes: planTasks.estimatedMinutes });
+    if (!updated.length) return false;
+    await recordActivity(tx, userId, { type: "task_completed", refId: updated[0].id, minutes: updated[0].estimatedMinutes ?? 0 });
+    return true;
+  });
 }
 
 export async function listMemories(db: NaviDb, userId: string, limit = 50) {
@@ -196,11 +204,19 @@ export async function addChatMessage(db: NaviDb, userId: string, conversationId:
   await db.update(conversations).set({ updatedAt: new Date() }).where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)));
 }
 
-/** Fixed-window rate limit on the rate_limits table. Returns true if the call is allowed. */
-export async function consumeRateLimit(db: NaviDb, key: string, limit: number, windowSeconds: number, now = Date.now()) {
-  const windowStart = Math.floor(now / 1000 / windowSeconds) * windowSeconds;
+/** Fixed-window rate limit. `retryAfter` is seconds until the current window ends. */
+export async function hitRateLimit(db: NaviDb, key: string, limit: number, windowSeconds: number, now = Date.now()) {
+  const nowSec = Math.floor(now / 1000);
+  const windowStart = Math.floor(nowSec / windowSeconds) * windowSeconds;
+  const retryAfter = Math.max(1, windowStart + windowSeconds - nowSec);
   const [row] = await db.insert(rateLimits).values({ key, windowStart, count: 1 })
     .onConflictDoUpdate({ target: [rateLimits.key, rateLimits.windowStart], set: { count: sql`${rateLimits.count} + 1` } })
     .returning({ count: rateLimits.count });
-  return (row?.count ?? 1) <= limit;
+  const count = row?.count ?? 1;
+  return { allowed: count <= limit, count, retryAfter };
+}
+
+/** Fixed-window rate limit on the rate_limits table. Returns true if the call is allowed. */
+export async function consumeRateLimit(db: NaviDb, key: string, limit: number, windowSeconds: number, now = Date.now()) {
+  return (await hitRateLimit(db, key, limit, windowSeconds, now)).allowed;
 }

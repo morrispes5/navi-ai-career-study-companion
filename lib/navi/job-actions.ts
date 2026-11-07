@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { getSessionUser } from "../auth";
 import { getDb } from "../db/client";
+import { recordActivity } from "../db/engagement";
 import * as jobs from "../db/jobs";
 
 const optionalText = (max: number) => z.string().trim().max(max).optional().nullable().transform((v) => (v ? v : null));
@@ -28,6 +29,11 @@ async function requireUserId() {
   return user.id;
 }
 
+async function noteJobActivity(userId: string, refId: string) {
+  try { await recordActivity(getDb(), userId, { type: "job_update", refId }); }
+  catch (error) { console.error("[navi] activity job", error instanceof Error ? error.message : "gagal"); }
+}
+
 export async function listJobsAction() {
   const userId = await requireUserId();
   const db = getDb();
@@ -36,7 +42,10 @@ export async function listJobsAction() {
 }
 export async function createJobAction(input: unknown) {
   const parsed = jobSchema.parse(input);
-  return jobs.createJob(getDb(), await requireUserId(), { ...parsed, appliedAt: parsed.appliedAt ?? undefined });
+  const userId = await requireUserId();
+  const row = await jobs.createJob(getDb(), userId, { ...parsed, appliedAt: parsed.appliedAt ?? undefined });
+  await noteJobActivity(userId, row.id);
+  return row;
 }
 /** Full replace of the editable fields (the edit form always sends every field). */
 export async function updateJobAction(id: unknown, input: unknown) {
@@ -45,8 +54,10 @@ export async function updateJobAction(id: unknown, input: unknown) {
   return row;
 }
 export async function setJobStatusAction(id: unknown, status: unknown) {
-  const row = await jobs.setJobStatus(getDb(), await requireUserId(), idSchema.parse(id), statusSchema.parse(status));
+  const userId = await requireUserId();
+  const row = await jobs.setJobStatus(getDb(), userId, idSchema.parse(id), statusSchema.parse(status));
   if (!row) throw new Error("Lamaran tidak ditemukan.");
+  await noteJobActivity(userId, row.id);
   return row;
 }
 export async function deleteJobAction(id: unknown) {

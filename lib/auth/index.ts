@@ -8,14 +8,7 @@ import { accounts, sessions, users, verifications } from "../../db/schema";
 import { getDb } from "../db/client";
 import { getServerEnv, trustedOrigins } from "../env";
 import { escapeHtml } from "../html";
-
-async function sendEmail(to: string, subject: string, html: string) {
-  const key = process.env.RESEND_API_KEY;
-  if (!key) return false;
-  const res = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ from: process.env.EMAIL_FROM ?? "Navi <onboarding@resend.dev>", to, subject, html }) });
-  if (!res.ok) console.error("[navi] Resend error", res.status);
-  return res.ok;
-}
+import { sendResendEmail } from "../server/email";
 
 /** Production without RESEND_API_KEY cannot deliver reset links: fail loudly instead of silently succeeding. */
 export function assertResetEmailConfigured(env: NodeJS.ProcessEnv = process.env) {
@@ -41,7 +34,7 @@ function build() {
       requireEmailVerification: false,
       async sendResetPassword({ user, url }) {
         assertResetEmailConfigured();
-        const sent = await sendEmail(user.email, "Reset password Navi", `<p>Klik tautan ini untuk membuat password baru:</p><p><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p>`);
+        const sent = await sendResendEmail(user.email, "Reset password Navi", `<p>Klik tautan ini untuk membuat password baru:</p><p><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p>`);
         // Tanpa RESEND_API_KEY link hanya dicatat di log server (dev).
         if (!sent && process.env.NODE_ENV === "production") throw new APIError("BAD_GATEWAY", { code: "EMAIL_SEND_FAILED", message: "Email reset gagal dikirim." });
         if (!sent) console.info(`[navi] reset password untuk ${user.email}: ${url}`);

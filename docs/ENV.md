@@ -21,4 +21,6 @@ Hasil scan repo (read-only): kode saat ini memakai `GEMINI_API_KEY`, `GEMINI_MOD
 | ~~`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`~~ | Supabase lama | — | **HAPUS** | ❌ | ❌ hapus |
 | ~~`SUPABASE_SECRET_KEY`~~ | Supabase lama | — | **HAPUS** | ❌ | ❌ hapus |
 
+Skrip sekali jalan `npm run db:migrate-supabase` membaca `SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE_KEY` dari shell, plus `TURSO_DATABASE_URL` saat `--apply`. Jangan menulis service role key ke `.env.local` atau env Vercel. Aplikasi Next tidak memakai variabel itu.
+
 Aturan: semua rahasia **server-only** (tanpa `NEXT_PUBLIC_`). Jangan pernah commit `.env.local`. Validasi env di `lib/env.ts` pakai Zod supaya app gagal cepat kalau ada yang kosong.

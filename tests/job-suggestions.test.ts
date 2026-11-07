@@ -1,8 +1,9 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClient } from "@libsql/client";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { removeTempDir } from "./migrations";
 
 const dir = mkdtempSync(join(tmpdir(), "navi-jobs-"));
 const file = join(dir, "jobs.db");
@@ -40,7 +41,7 @@ beforeAll(async () => {
   gen = await import("../lib/server/job-suggestions");
   db = (await import("../lib/db/client")).getDb();
 });
-afterAll(() => { client.close(); db.$client.close(); rmSync(dir, { recursive: true, force: true }); });
+afterAll(() => { client.close(); db.$client.close(); removeTempDir(dir); });
 beforeEach(() => { gemini.generate = async () => JSON.stringify(good); });
 
 describe("job suggestions", () => {

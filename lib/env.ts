@@ -57,6 +57,21 @@ export function getGeminiConfig() {
   return { apiKey: r.GEMINI_API_KEY, model: r.GEMINI_MODEL };
 }
 
+const chatRateSchema = z.object({
+  CHAT_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
+  CHAT_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
+});
+
+/** Batas pesan chat per user. Nilai env yang rusak jatuh ke 20 pesan / 60 detik. */
+export function getChatRateLimit() {
+  const r = chatRateSchema.safeParse({
+    CHAT_RATE_LIMIT_MAX: empty(process.env.CHAT_RATE_LIMIT_MAX) ?? 20,
+    CHAT_RATE_LIMIT_WINDOW_SECONDS: empty(process.env.CHAT_RATE_LIMIT_WINDOW_SECONDS) ?? 60,
+  });
+  if (!r.success) return { max: 20, windowSeconds: 60 };
+  return { max: r.data.CHAT_RATE_LIMIT_MAX, windowSeconds: r.data.CHAT_RATE_LIMIT_WINDOW_SECONDS };
+}
+
 export function trustedOrigins(env: Pick<ServerEnv, "BETTER_AUTH_URL" | "NEXT_PUBLIC_APP_URL">) {
   return [...new Set([env.BETTER_AUTH_URL, env.NEXT_PUBLIC_APP_URL].filter((v): v is string => Boolean(v)).map((v) => new URL(v).origin))];
 }

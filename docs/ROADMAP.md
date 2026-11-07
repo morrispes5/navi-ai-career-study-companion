@@ -1,5 +1,13 @@
 # Roadmap Navi
 
+Status kode di `main` setelah fase karier (#21–#27), plus sisa yang dikerjakan berikutnya:
+
+- Fase 0–2 dan 4: selesai (Turso, Better Auth, job tracker, review CV, saran kerja).
+- Fase 3: generator rencana dan fallback template selesai. Rate limit `/api/chat` (20/60 dtk, 429 + `Retry-After`) selesai.
+- Fase 5: streak, `activity_log`, halaman `/workspace/dashboard`, dan cron `/api/cron/reminders` selesai di kode. Email produksi butuh `RESEND_API_KEY`.
+- Fase 6: Vitest dan GitHub Actions sudah ada. Playwright (`npm run test:e2e`) mencakup daftar, masuk, rencana, dan chat. Deploy Vercel tetap langkah manual: isi env di proyek Vercel (lihat `docs/ENV.md`) dan jangan commit rahasia. `vercel.json` sudah mendaftarkan cron pengingat.
+- Skrip migrasi data Supabase → Turso (#3) ada di `lib/migrate/from-supabase.ts` (`npm run db:migrate-supabase`). Default-nya dry-run dan menghitung baris sebelum/sesudah saat `--apply`. Password lama tidak disalin; setiap pengguna mendapat akun credential yang tidak bisa dipakai masuk, lalu mengatur ulang password. Menulis ke URL yang mengandung `morriztech` ditolak tanpa `--apply` dan `ALLOW_PRODUCTION=1`. Skrip ini belum dijalankan ke database produksi.
+
 ## Fase 0 — Bersih-bersih
 - Hapus `.mcp.json` yang ter-commit, tambahkan ke `.gitignore`.
 - Hapus folder screenshot duplikat `dokumentasi ss/` (pertahankan `docs/screenshots/`).

@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClient } from "@libsql/client";
-import { migrationSql } from "./migrations";
+import { migrationSql, removeTempDir } from "./migrations";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 // POST /api/chat with a mocked session: 401 without session, 404 for another user's conversation.
@@ -32,7 +32,7 @@ beforeAll(async () => {
   await navi.seedInitialNaviData(db, "user-b", profile);
   ({ POST } = await import("../app/api/chat/route"));
 });
-afterAll(() => { db.$client.close(); rmSync(dir, { recursive: true, force: true }); });
+afterAll(() => { db.$client.close(); removeTempDir(dir); });
 
 describe("POST /api/chat", () => {
   it("returns 401 without a session", async () => {
@@ -55,5 +55,26 @@ describe("POST /api/chat", () => {
     const json = await res.json();
     expect(json.source).toBe("fixture");
     expect((await navi.loadDashboard(db, "user-a"))?.messages).toHaveLength(2);
+  });
+
+  it("returns 429 with Retry-After after the per-user window is full, without blocking another user", async () => {
+    await db.$client.execute({ sql: "DELETE FROM rate_limits WHERE key = ?", args: ["chat:user-a"] });
+    process.env.CHAT_RATE_LIMIT_MAX = "1";
+    process.env.CHAT_RATE_LIMIT_WINDOW_SECONDS = "60";
+    session.userId = "user-a";
+    const conv = (await navi.loadDashboard(db, "user-a"))!.conversationId!;
+    expect((await POST(req({ message: "masih boleh", conversationId: conv }))).status).toBe(200);
+    const blocked = await POST(req({ message: "kebanyakan", conversationId: conv }));
+    expect(blocked.status).toBe(429);
+    expect(Number(blocked.headers.get("Retry-After"))).toBeGreaterThan(0);
+    expect((await blocked.json()).error).toMatch(/Terlalu banyak/);
+    const before = (await navi.loadDashboard(db, "user-a"))!.messages.length;
+    expect((await POST(req({ message: "masih ditolak", conversationId: conv }))).status).toBe(429);
+    expect((await navi.loadDashboard(db, "user-a"))!.messages.length).toBe(before);
+    session.userId = "user-b";
+    const other = await navi.createConversation(db, "user-b");
+    expect((await POST(req({ message: "halo", conversationId: other }))).status).toBe(200);
+    delete process.env.CHAT_RATE_LIMIT_MAX;
+    delete process.env.CHAT_RATE_LIMIT_WINDOW_SECONDS;
   });
 });

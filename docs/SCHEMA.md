@@ -17,4 +17,4 @@ Sumber kebenaran: `db/schema.ts`. Semua tabel domain punya `user_id` (FK ke `use
 | `activity_log` | Log aktivitas harian untuk streak & dashboard | N:1 user |
 | `rate_limits` | Counter rate limit `/api/chat` per jendela | — |
 
-Catatan: timestamp disimpan sebagai unix detik (`integer mode: timestamp`); JSON di kolom `text mode: json`. Migrasi dari Supabase: `supabase/migrations/*.sql` dijadikan referensi lalu dihapus setelah Fase 1.
+Catatan: timestamp disimpan sebagai unix detik (`integer mode: timestamp`); JSON di kolom `text mode: json`. SQL Supabase lama ada di `docs/legacy/`. Salin data sekali lewat `npm run db:migrate-supabase` (dry-run; password tidak ikut).

@@ -1,8 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
 import { getSessionUser } from "../../../lib/auth";
 import { getDb } from "../../../lib/db/client";
-import { getGeminiConfig } from "../../../lib/env";
-import { addChatMessage, createConversation, findConversation, getActivePlan, getProfile, listMemories } from "../../../lib/db/navi";
+import { getChatRateLimit, getGeminiConfig } from "../../../lib/env";
+import { recordActivity } from "../../../lib/db/engagement";
+import { addChatMessage, createConversation, findConversation, getActivePlan, getProfile, hitRateLimit, listMemories } from "../../../lib/db/navi";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -27,6 +28,9 @@ export async function POST(request: Request) {
   const [plan, memories] = await Promise.all([getActivePlan(db, userId), listMemories(db, userId, 12)]);
   let conversationId = parsed.data.conversationId;
   if (conversationId && !(await findConversation(db, userId, conversationId))) return NextResponse.json({ error: "Percakapan tidak ditemukan." }, { status: 404 });
+  const limit = getChatRateLimit();
+  const hit = await hitRateLimit(db, `chat:${userId}`, limit.max, limit.windowSeconds);
+  if (!hit.allowed) return NextResponse.json({ error: "Terlalu banyak pesan. Coba lagi sebentar." }, { status: 429, headers: { "Retry-After": String(hit.retryAfter) } });
   try {
     if (!conversationId) conversationId = await createConversation(db, userId);
     await addChatMessage(db, userId, conversationId, "user", parsed.data.message);
@@ -45,6 +49,7 @@ export async function POST(request: Request) {
   } catch { /* fixture is intentional */ }
   try {
     await addChatMessage(db, userId, conversationId, "assistant", `${reply.answer}\n\nLangkah berikutnya: ${reply.nextAction}${reply.followUp ? `\n\n${reply.followUp}` : ""}`, source);
+    await recordActivity(db, userId, { type: "chat", refId: conversationId });
   } catch { return NextResponse.json({ error: "Jawaban Navi belum dapat disimpan." }, { status: 500 }); }
   return NextResponse.json({ ...reply, source, conversationId });
 }

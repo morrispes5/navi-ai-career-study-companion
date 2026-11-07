@@ -3,7 +3,9 @@
 import { z } from "zod";
 import { getSessionUser } from "../auth";
 import { getDb } from "../db/client";
+import { updateReminderSettings } from "../db/engagement";
 import * as data from "../db/navi";
+import { TIMEZONES } from "../engagement/dates";
 import type { NaviProfile } from "./profile";
 
 const profileSchema = z.object({ role: z.string().min(1).max(120), level: z.string().min(1).max(120), hours: z.string().min(1).max(60), timeline: z.string().min(1).max(60), preference: z.string().min(1).max(200) });
@@ -25,6 +27,8 @@ export async function createMemory(input: data.MemoryInput) { return data.create
 export async function updateMemory(id: string, input: data.MemoryInput) { return data.updateMemory(getDb(), await requireUserId(), idSchema.parse(id), memorySchema.parse(input)); }
 export async function removeMemory(id: string) { await data.removeMemory(getDb(), await requireUserId(), idSchema.parse(id)); }
 export async function clearMemories() { await data.clearMemories(getDb(), await requireUserId()); }
+const reminderSchema = z.object({ enabled: z.boolean(), reminderTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), timezone: z.enum(TIMEZONES) });
+export async function saveReminderSettings(input: unknown) { await updateReminderSettings(getDb(), await requireUserId(), reminderSchema.parse(input)); }
 export type ReplanResult = { ok: true; planId: string } | { ok: false; error: string };
 /** Rate-limited (rate_limits table): max REPLAN_LIMIT.max replans per user per hour, since each one may call Gemini. */
 export async function applyReplan(next: NaviProfile): Promise<ReplanResult> {

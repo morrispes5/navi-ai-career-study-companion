@@ -1,10 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { users } from "../db/schema";
 import { createDb, type NaviDb } from "../lib/db/client";
-import { migrationSql } from "./migrations";
+import { migrationSql, removeTempDir } from "./migrations";
 
 const state: { db: NaviDb | null; user: string | null } = { db: null, user: null };
 vi.mock("../lib/auth", () => ({ getSessionUser: async () => (state.user ? { id: state.user, email: `${state.user}@x.id` } : null) }));
@@ -21,7 +21,7 @@ beforeAll(async () => {
   await state.db.$client.execute("PRAGMA foreign_keys = ON");
   await state.db.insert(users).values([{ id: "alice", name: "Alice", email: "a@x.id" }, { id: "bob", name: "Bob", email: "b@x.id" }]);
 });
-afterAll(() => { state.db?.$client.close(); rmSync(dir, { recursive: true, force: true }); });
+afterAll(() => { state.db?.$client.close(); removeTempDir(dir); });
 
 const base = { company: "Tokopedia", position: "Frontend Intern", url: "", location: "", salaryRange: "", status: "wishlist", appliedAt: "", notes: "" };
 

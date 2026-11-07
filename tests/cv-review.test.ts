@@ -1,9 +1,10 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { crc32 } from "node:zlib";
 import { createClient } from "@libsql/client";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { removeTempDir } from "./migrations";
 
 const dir = mkdtempSync(join(tmpdir(), "navi-cv-"));
 const file = join(dir, "cv.db");
@@ -43,7 +44,7 @@ beforeAll(async () => {
   POST = handler.createCvReviewPost({ generate: (a) => gen.fn(a), maxBodyBytes: 200 * 1024 });
   db = (await import("../lib/db/client")).getDb();
 });
-afterAll(() => { db.$client.close(); rmSync(dir, { recursive: true, force: true }); });
+afterAll(() => { db.$client.close(); removeTempDir(dir); });
 beforeEach(() => { gen.fn = async () => JSON.stringify(good); });
 
 describe("CV review", () => {

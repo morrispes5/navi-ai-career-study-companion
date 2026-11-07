@@ -1,7 +1,7 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { migrationSql } from "./migrations";
+import { migrationSql, removeTempDir } from "./migrations";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { users } from "../db/schema";
 import { createDb, type NaviDb } from "../lib/db/client";
@@ -22,7 +22,7 @@ beforeAll(async () => {
   await navi.seedInitialNaviData(db, "alice", profile);
   await navi.seedInitialNaviData(db, "bob", { ...profile, role: "Data Analyst" });
 });
-afterAll(() => { db.$client.close(); rmSync(dir, { recursive: true, force: true }); });
+afterAll(() => { db.$client.close(); removeTempDir(dir); });
 
 describe("data layer user_id scoping", () => {
   it("seed is idempotent and creates a plan with tasks", async () => {

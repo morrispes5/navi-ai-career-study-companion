@@ -5,6 +5,7 @@ import { getSessionUser } from "../auth";
 import { getDb } from "../db/client";
 import { getProfile } from "../db/navi";
 import { consumeCvReviewQuota, refundCvReviewQuota, saveCvReview } from "../db/cv";
+import { recordActivity } from "../db/engagement";
 import { CV_MAX_BODY_BYTES, CV_MAX_CHARS, CV_MIN_CHARS, CvInputError, extractCvText, normaliseCvText, readBodyLimited } from "./cv-parse";
 import { defaultGenerate, generateCvReview, type GenerateFn } from "./cv-review";
 
@@ -62,6 +63,8 @@ export function createCvReviewPost(deps: CvReviewDeps = { generate: defaultGener
       return NextResponse.json({ error: FALLBACK }, { status: 503 });
     }
     const id = await saveCvReview(db, user.id, { targetRole, result: outcome.result, model: outcome.model });
+    try { await recordActivity(db, user.id, { type: "cv_review", refId: id }); }
+    catch (error) { console.error("[navi] activity cv", error instanceof Error ? error.message : "gagal"); }
     return NextResponse.json({ id, targetRole, ...outcome.result }, { status: 201 });
   };
 }
